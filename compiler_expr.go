@@ -101,7 +101,7 @@ func (c *Compiler) visitPropertyAccess(prop PropertyAccessExpr) string {
 		case "properties":
 			return v + "." + c.schema.EdgePropsCol
 		default:
-			return "json_extract(" + v + "." + c.schema.EdgePropsCol + ", '$." + propName + "')"
+			return c.schema.Dialect.JSONExtract(v+"."+c.schema.EdgePropsCol, propName)
 		}
 	}
 
@@ -113,7 +113,7 @@ func (c *Compiler) visitPropertyAccess(prop PropertyAccessExpr) string {
 	case "properties":
 		return v + "." + c.schema.NodePropsCol
 	default:
-		return "json_extract(" + v + "." + c.schema.NodePropsCol + ", '$." + propName + "')"
+		return c.schema.Dialect.JSONExtract(v+"."+c.schema.NodePropsCol, propName)
 	}
 }
 
@@ -315,7 +315,7 @@ func (c *Compiler) visitFunctionCall(fn FunctionCallExpr) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return "json_group_array(" + distinctStr + innerSQL + ") FILTER (WHERE " + innerSQL + " IS NOT NULL)", nil
+		return c.schema.Dialect.ArrayAgg(innerSQL, innerSQL+" IS NOT NULL", fn.IsDistinct), nil
 	}
 
 	// 4. Scalar functions
@@ -349,8 +349,7 @@ func (c *Compiler) visitFunctionCall(fn FunctionCallExpr) (string, error) {
 	}
 	if lower == "size" && len(fn.Args) == 1 {
 		argSQL, _ := c.visitExpression(fn.Args[0])
-		return "CASE WHEN json_valid(" + argSQL + ") THEN json_array_length(" + argSQL + ") " +
-			"ELSE length(" + argSQL + ") END", nil
+		return c.schema.Dialect.ArrayLength(argSQL), nil
 	}
 
 	// Default function call
@@ -374,7 +373,7 @@ func (c *Compiler) visitList(l ListExpr) (string, error) {
 		}
 		items = append(items, s)
 	}
-	return "json_array(" + strings.Join(items, ", ") + ")", nil
+	return c.schema.Dialect.ArrayLiteral(items...), nil
 }
 
 func (c *Compiler) visitMap(m MapExpr) (string, error) {
@@ -437,7 +436,7 @@ func (c *Compiler) visitListPredicate(pred ListPredicateExpr) (string, error) {
 		return "", err
 	}
 
-	return RenderQuantifier(&QuantifierModel{
+	return c.schema.Dialect.RenderQuantifier(&QuantifierModel{
 		Quantifier: pred.Quantifier,
 		List:       listSQL,
 		Var:        pred.Variable,
@@ -468,7 +467,7 @@ func (c *Compiler) visitListComprehension(comp ListComprehensionExpr) (string, e
 	}
 	delete(c.unwindVariables, comp.Variable)
 
-	return RenderListComprehension(&ListCompModel{
+	return c.schema.Dialect.RenderListComprehension(&ListCompModel{
 		List:       listSQL,
 		Var:        comp.Variable,
 		Filter:     filterSQL,

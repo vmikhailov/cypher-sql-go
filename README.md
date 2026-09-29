@@ -134,6 +134,21 @@ cfg.LabelResolver = func(nodeVar, label string) (string, bool) {
 compiled, err := cyphersql.CompileWithSchema(cypherQuery, cfg)
 ```
 
+### 3. Multi-Engine Dialects (SQLite & ClickHouse)
+
+For massive multi-million or billion-edge scale, switch the compiler dialect to **ClickHouse**:
+
+```go
+// Compile for ClickHouse with native JSONExtractString, groupArrayIf, and arrayJoin
+chConfig := cyphersql.ClickHouseSchemaConfig()
+compiled, err := cyphersql.CompileWithSchema(cypherQuery, chConfig)
+```
+
+| Dialect | Property Extraction | List Aggregation (`collect`) | Array Literals |
+| :--- | :--- | :--- | :--- |
+| **SQLite** (default) | `json_extract(p, '$.name')` | `json_group_array(name) FILTER (...)` | `json_array(...)` |
+| **ClickHouse** | `JSONExtractString(p, 'name')` | `groupArrayIf(name, name != '')` | `[items...]` |
+
 ---
 
 ## 🚀 Quickstart

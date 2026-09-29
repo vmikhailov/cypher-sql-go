@@ -401,7 +401,7 @@ func (c *Compiler) tryCompileDecomposedAggregation(funcExpr FunctionCallExpr, di
 
 	lower := strings.ToLower(funcExpr.Name)
 	if lower == "collect" {
-		return RenderCollectSubquery(&SubqueryModel{
+		return c.schema.Dialect.RenderCollectSubquery(&SubqueryModel{
 			Distinct:   funcExpr.IsDistinct,
 			Projection: projSQL,
 			FromJoins:  fromJoins,

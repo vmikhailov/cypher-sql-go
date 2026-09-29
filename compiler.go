@@ -71,6 +71,9 @@ func NewCompilerWithOptions(query *Query, params map[string]any, cfg SchemaConfi
 	if cfg.EdgePropsCol == "" {
 		cfg.EdgePropsCol = "properties"
 	}
+	if cfg.Dialect == nil {
+		cfg.Dialect = SQLiteDialect()
+	}
 
 	return &Compiler{
 		query:              query,

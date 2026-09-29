@@ -13,6 +13,8 @@ const Version = "1.0.0"
 
 // SchemaConfig defines physical table and column mappings for Cypher to SQL compilation.
 type SchemaConfig struct {
+	// Dialect is the database dialect for SQL generation (default: SQLiteDialect()).
+	Dialect Dialect
 	// NodesTable is the table name for vertices (default: "nodes").
 	NodesTable string
 	// EdgesTable is the table name for relationships (default: "edges").
@@ -36,9 +38,26 @@ type SchemaConfig struct {
 	LabelResolver func(nodeVar, label string) (string, bool)
 }
 
-// DefaultSchemaConfig returns the standard Universal Property Graph schema configuration.
+// DefaultSchemaConfig returns the standard Universal Property Graph schema configuration for SQLite.
 func DefaultSchemaConfig() SchemaConfig {
 	return SchemaConfig{
+		Dialect:      SQLiteDialect(),
+		NodesTable:   "nodes",
+		EdgesTable:   "edges",
+		NodeIDCol:    "id",
+		NodeKindCol:  "kind",
+		NodePropsCol: "properties",
+		EdgeFromCol:  "from_id",
+		EdgeToCol:    "to_id",
+		EdgeKindCol:  "kind",
+		EdgePropsCol: "properties",
+	}
+}
+
+// ClickHouseSchemaConfig returns a standard SchemaConfig tuned for ClickHouse.
+func ClickHouseSchemaConfig() SchemaConfig {
+	return SchemaConfig{
+		Dialect:      ClickHouseDialect(),
 		NodesTable:   "nodes",
 		EdgesTable:   "edges",
 		NodeIDCol:    "id",
