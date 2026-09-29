@@ -127,7 +127,8 @@ func (c *Compiler) processMatchClause(match MatchClause, mainWhereConditions *[]
 	}
 
 	for _, path := range match.Paths {
-		if err := c.processPathPattern(path, isOptional, joinKeyword, mainWhereConditions, optionalWhereExtra); err != nil {
+		err := c.processPathPattern(path, isOptional, joinKeyword, mainWhereConditions, optionalWhereExtra)
+		if err != nil {
 			return err
 		}
 	}
@@ -144,7 +145,13 @@ func (c *Compiler) processMatchClause(match MatchClause, mainWhereConditions *[]
 	return nil
 }
 
-func (c *Compiler) processPathPattern(path PathPattern, isOptional bool, joinKeyword string, mainWhereConditions *[]string, optionalWhereExtra []string) error {
+func (c *Compiler) processPathPattern(
+	path PathPattern,
+	isOptional bool,
+	joinKeyword string,
+	mainWhereConditions *[]string,
+	optionalWhereExtra []string,
+) error {
 	headVar := path.Head.Variable
 	if headVar == "" {
 		c.varIndex++
@@ -175,7 +182,14 @@ func (c *Compiler) processPathPattern(path PathPattern, isOptional bool, joinKey
 	return c.processPathChain(path, headVar, isOptional, joinKeyword, mainWhereConditions, optionalWhereExtra)
 }
 
-func (c *Compiler) bindHeadNode(headNode NodePattern, headVar string, isOptional bool, joinKeyword string, mainWhereConditions *[]string, optionalWhereExtra []string) {
+func (c *Compiler) bindHeadNode(
+	headNode NodePattern,
+	headVar string,
+	isOptional bool,
+	joinKeyword string,
+	mainWhereConditions *[]string,
+	optionalWhereExtra []string,
+) {
 	escHead := c.escapeVar(headVar)
 
 	var conds []string
@@ -204,7 +218,14 @@ func (c *Compiler) bindHeadNode(headNode NodePattern, headVar string, isOptional
 	c.declaredNodes[headVar] = true
 }
 
-func (c *Compiler) processPathChain(path PathPattern, headVar string, isOptional bool, joinKeyword string, mainWhereConditions *[]string, optionalWhereExtra []string) error {
+func (c *Compiler) processPathChain(
+	path PathPattern,
+	headVar string,
+	isOptional bool,
+	joinKeyword string,
+	mainWhereConditions *[]string,
+	optionalWhereExtra []string,
+) error {
 	prevVar := headVar
 
 	for _, elem := range path.Chain {
@@ -259,7 +280,9 @@ func (c *Compiler) processPathChain(path PathPattern, headVar string, isOptional
 		case DirectionIncoming:
 			targetOnConds = append(targetOnConds, escTarget+".id = "+escRel+".from_id")
 		case DirectionUndirected:
-			targetOnConds = append(targetOnConds, escTarget+".id = CASE WHEN "+escRel+".from_id = "+escPrev+".id THEN "+escRel+".to_id ELSE "+escRel+".from_id END")
+			targetOnConds = append(targetOnConds,
+				escTarget+".id = CASE WHEN "+escRel+".from_id = "+escPrev+".id THEN "+
+					escRel+".to_id ELSE "+escRel+".from_id END")
 		}
 
 		c.addNodeFiltersToConditions(targetNode, targetVar, &targetOnConds)
@@ -296,19 +319,40 @@ func (c *Compiler) compileNodeLabelPredicate(nVar, label string) string {
 	lower := strings.ToLower(label)
 	switch lower {
 	case "service":
-		return "(" + nVar + ".kind = 'Service' OR (" + nVar + ".kind = 'Project' AND json_extract(" + nVar + ".properties, '$.role') = 'Service' AND NOT EXISTS (SELECT 1 FROM nodes _s WHERE _s.kind = 'Service' AND (json_extract(_s.properties, '$.project_id') = " + nVar + ".id OR json_extract(_s.properties, '$.name') = json_extract(" + nVar + ".properties, '$.name')))))"
+		return "(" + nVar + ".kind = 'Service' OR (" + nVar + ".kind = 'Project' AND " +
+			"json_extract(" + nVar + ".properties, '$.role') = 'Service' AND NOT EXISTS (" +
+			"SELECT 1 FROM nodes _s WHERE _s.kind = 'Service' AND (" +
+			"json_extract(_s.properties, '$.project_id') = " + nVar + ".id OR " +
+			"json_extract(_s.properties, '$.name') = json_extract(" + nVar + ".properties, '$.name')))))"
 	case "app":
-		return "(" + nVar + ".kind IN ('App', 'FrontendApp') OR (" + nVar + ".kind = 'Project' AND json_extract(" + nVar + ".properties, '$.role') IN ('App', 'FrontendApp') AND NOT EXISTS (SELECT 1 FROM nodes _a WHERE _a.kind IN ('App', 'FrontendApp') AND (json_extract(_a.properties, '$.project_id') = " + nVar + ".id OR json_extract(_a.properties, '$.name') = json_extract(" + nVar + ".properties, '$.name')))))"
+		return "(" + nVar + ".kind IN ('App', 'FrontendApp') OR (" + nVar + ".kind = 'Project' AND " +
+			"json_extract(" + nVar + ".properties, '$.role') IN ('App', 'FrontendApp') AND NOT EXISTS (" +
+			"SELECT 1 FROM nodes _a WHERE _a.kind IN ('App', 'FrontendApp') AND (" +
+			"json_extract(_a.properties, '$.project_id') = " + nVar + ".id OR " +
+			"json_extract(_a.properties, '$.name') = json_extract(" + nVar + ".properties, '$.name')))))"
 	case "library":
-		return "(" + nVar + ".kind IN ('Library', 'SharedLibrary') OR (" + nVar + ".kind = 'Project' AND (json_extract(" + nVar + ".properties, '$.role') IN ('Library', 'SharedLibrary') OR json_extract(" + nVar + ".properties, '$.is_library') = 1) AND NOT EXISTS (SELECT 1 FROM nodes _l WHERE _l.kind IN ('Library', 'SharedLibrary') AND (json_extract(_l.properties, '$.project_id') = " + nVar + ".id OR json_extract(_l.properties, '$.name') = json_extract(" + nVar + ".properties, '$.name')))))"
+		return "(" + nVar + ".kind IN ('Library', 'SharedLibrary') OR (" + nVar + ".kind = 'Project' AND (" +
+			"json_extract(" + nVar + ".properties, '$.role') IN ('Library', 'SharedLibrary') OR " +
+			"json_extract(" + nVar + ".properties, '$.is_library') = 1) AND NOT EXISTS (" +
+			"SELECT 1 FROM nodes _l WHERE _l.kind IN ('Library', 'SharedLibrary') AND (" +
+			"json_extract(_l.properties, '$.project_id') = " + nVar + ".id OR " +
+			"json_extract(_l.properties, '$.name') = json_extract(" + nVar + ".properties, '$.name')))))"
 	case "project":
-		return "(" + nVar + ".kind = 'Project' OR (" + nVar + ".kind IN ('Service', 'App', 'FrontendApp', 'Library', 'SharedLibrary', 'Worker', 'CliTool') AND NOT EXISTS (SELECT 1 FROM nodes _p WHERE _p.kind = 'Project' AND (json_extract(_p.properties, '$.project_id') = " + nVar + ".id OR json_extract(_p.properties, '$.name') = json_extract(" + nVar + ".properties, '$.name')))))"
+		return "(" + nVar + ".kind = 'Project' OR (" + nVar + ".kind IN (" +
+			"'Service', 'App', 'FrontendApp', 'Library', 'SharedLibrary', 'Worker', 'CliTool') AND NOT EXISTS (" +
+			"SELECT 1 FROM nodes _p WHERE _p.kind = 'Project' AND (" +
+			"json_extract(_p.properties, '$.project_id') = " + nVar + ".id OR " +
+			"json_extract(_p.properties, '$.name') = json_extract(" + nVar + ".properties, '$.name')))))"
 	default:
 		return nVar + ".kind = '" + label + "'"
 	}
 }
 
-func (c *Compiler) processWithClauses(whereConditions *[]string, groupByColumns *[]string, havingConditions *[]string) error {
+func (c *Compiler) processWithClauses(
+	whereConditions *[]string,
+	groupByColumns *[]string,
+	havingConditions *[]string,
+) error {
 	for _, with := range c.query.WithClauses {
 		hasAgg := false
 		for _, item := range with.Items {
@@ -430,7 +474,12 @@ func (c *Compiler) buildSelectColumns(ret ReturnClause) ([]string, error) {
 	return cols, nil
 }
 
-func (c *Compiler) assembleQuerySQL(selectColumns []string, whereConditions []string, groupByColumns []string, havingConditions []string) string {
+func (c *Compiler) assembleQuerySQL(
+	selectColumns []string,
+	whereConditions []string,
+	groupByColumns []string,
+	havingConditions []string,
+) string {
 	// Deduplicate groupBy columns
 	seen := make(map[string]bool)
 	var uniqueGroup []string

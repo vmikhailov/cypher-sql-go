@@ -185,13 +185,17 @@ func TestExecution_InMemorySQLite(t *testing.T) {
 	}
 	insertEdge := func(from, to, kind string, props map[string]any) {
 		b, _ := json.Marshal(props)
-		_, err := db.Exec("INSERT INTO edges (from_id, to_id, kind, properties) VALUES (?, ?, ?, ?)", from, to, kind, string(b))
+		_, err := db.Exec(
+			"INSERT INTO edges (from_id, to_id, kind, properties) VALUES (?, ?, ?, ?)",
+			from, to, kind, string(b))
 		if err != nil {
 			t.Fatalf("insert edge: %v", err)
 		}
 	}
 
-	insertNode("proj:1", "Project", map[string]any{"name": "OrdersService", "project_type": "go", "tags": []string{"production", "core"}})
+	insertNode("proj:1", "Project", map[string]any{
+		"name": "OrdersService", "project_type": "go", "tags": []string{"production", "core"},
+	})
 	insertNode("ep:1", "Endpoint", map[string]any{"name": "POST /orders"})
 	insertNode("ep:2", "Endpoint", map[string]any{"name": "GET /orders/:id"})
 	insertNode("db:1", "Database", map[string]any{"name": "orders_pg"})
@@ -281,8 +285,10 @@ func TestExecution_InMemorySQLite(t *testing.T) {
 			t.Fatalf("scan error: %v", err)
 		}
 
-		if caller != "HandleOrder" || callee != "SaveToDB" || relType != "CALLS" || via != "direct" || chain != "HandleOrder->SaveToDB" {
-			t.Errorf("unexpected row values: caller=%s, callee=%s, type=%s, via=%s, chain=%s", caller, callee, relType, via, chain)
+		if caller != "HandleOrder" || callee != "SaveToDB" || relType != "CALLS" ||
+			via != "direct" || chain != "HandleOrder->SaveToDB" {
+			t.Errorf("unexpected row values: caller=%s, callee=%s, type=%s, via=%s, chain=%s",
+				caller, callee, relType, via, chain)
 		}
 	})
 

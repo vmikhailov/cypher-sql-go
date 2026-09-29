@@ -46,30 +46,30 @@ const (
 	TokenDesc
 
 	// Punctuation & Operators
-	TokenLParen    // (
-	TokenRParen    // )
-	TokenLBracket  // [
-	TokenRBracket  // ]
-	TokenLBrace    // {
-	TokenRBrace    // }
-	TokenColon     // :
-	TokenComma     // ,
-	TokenDot       // .
-	TokenPipe      // |
-	TokenArrowR    // ->
-	TokenArrowL    // <-
-	TokenDash      // -
-	TokenEqual     // =
-	TokenNotEqual  // <> or !=
-	TokenLt        // <
-	TokenLte       // <=
-	TokenGt        // >
-	TokenGte       // >=
-	TokenPlus      // +
-	TokenAsterisk  // *
-	TokenSlash     // /
-	TokenPercent   // %
-	TokenCaret     // ^
+	TokenLParen   // (
+	TokenRParen   // )
+	TokenLBracket // [
+	TokenRBracket // ]
+	TokenLBrace   // {
+	TokenRBrace   // }
+	TokenColon    // :
+	TokenComma    // ,
+	TokenDot      // .
+	TokenPipe     // |
+	TokenArrowR   // ->
+	TokenArrowL   // <-
+	TokenDash     // -
+	TokenEqual    // =
+	TokenNotEqual // <> or !=
+	TokenLt       // <
+	TokenLte      // <=
+	TokenGt       // >
+	TokenGte      // >=
+	TokenPlus     // +
+	TokenAsterisk // *
+	TokenSlash    // /
+	TokenPercent  // %
+	TokenCaret    // ^
 )
 
 var tokenNames = map[TokenType]string{

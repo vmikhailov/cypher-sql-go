@@ -251,7 +251,9 @@ func hasVariable(expr Expression, varName string) bool {
 		}
 		return e.Else != nil && hasVariable(e.Else, varName)
 	case ListComprehensionExpr:
-		return hasVariable(e.List, varName) || (e.Filter != nil && hasVariable(e.Filter, varName)) || (e.Projection != nil && hasVariable(e.Projection, varName))
+		return hasVariable(e.List, varName) ||
+			(e.Filter != nil && hasVariable(e.Filter, varName)) ||
+			(e.Projection != nil && hasVariable(e.Projection, varName))
 	case ListPredicateExpr:
 		return hasVariable(e.List, varName) || hasVariable(e.Predicate, varName)
 	default:
@@ -291,7 +293,8 @@ func hasVariableOutsideAggregationExpr(expr Expression, varName string, insideAg
 		}
 		return false
 	case BinaryExpr:
-		return hasVariableOutsideAggregationExpr(e.Left, varName, insideAgg) || hasVariableOutsideAggregationExpr(e.Right, varName, insideAgg)
+		return hasVariableOutsideAggregationExpr(e.Left, varName, insideAgg) ||
+			hasVariableOutsideAggregationExpr(e.Right, varName, insideAgg)
 	case UnaryExpr:
 		return hasVariableOutsideAggregationExpr(e.Operand, varName, insideAgg)
 	case ListExpr:
@@ -313,7 +316,8 @@ func hasVariableOutsideAggregationExpr(expr Expression, varName string, insideAg
 			return true
 		}
 		for _, w := range e.WhenBranches {
-			if hasVariableOutsideAggregationExpr(w.When, varName, insideAgg) || hasVariableOutsideAggregationExpr(w.Then, varName, insideAgg) {
+			if hasVariableOutsideAggregationExpr(w.When, varName, insideAgg) ||
+				hasVariableOutsideAggregationExpr(w.Then, varName, insideAgg) {
 				return true
 			}
 		}

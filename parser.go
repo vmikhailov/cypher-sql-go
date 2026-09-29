@@ -379,7 +379,8 @@ func (p *Parser) parsePathElement() (*PathElement, error) {
 }
 
 func (p *Parser) parseRelationshipDetails(rel *RelationshipPattern) error {
-	if p.isNameToken() && p.current.Type != TokenColon && p.current.Type != TokenAsterisk && p.current.Type != TokenLBrace {
+	if p.isNameToken() && p.current.Type != TokenColon &&
+		p.current.Type != TokenAsterisk && p.current.Type != TokenLBrace {
 		v, err := p.parseName()
 		if err != nil {
 			return err

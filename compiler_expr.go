@@ -56,10 +56,12 @@ func (c *Compiler) visitIdentifier(id IdentifierExpr) string {
 		return escaped + ".value"
 	}
 	if c.declaredNodes[id.Name] {
-		return "json_object('id', " + escaped + ".id, 'kind', " + escaped + ".kind, 'properties', json(" + escaped + ".properties))"
+		return "json_object('id', " + escaped + ".id, 'kind', " + escaped + ".kind, " +
+			"'properties', json(" + escaped + ".properties))"
 	}
 	if c.declaredRels[id.Name] {
-		return "json_object('type', " + escaped + ".kind, 'from', " + escaped + ".from_id, 'to', " + escaped + ".to_id, 'properties', json(" + escaped + ".properties))"
+		return "json_object('type', " + escaped + ".kind, 'from', " + escaped + ".from_id, " +
+			"'to', " + escaped + ".to_id, 'properties', json(" + escaped + ".properties))"
 	}
 	return escaped
 }
@@ -75,11 +77,13 @@ func (c *Compiler) visitPropertyAccess(prop PropertyAccessExpr) string {
 		if strings.EqualFold(propName, "kind") {
 			return "COALESCE(json_extract(" + v + ".value, '$.kind'), " + v + ".value)"
 		}
-		return "COALESCE(json_extract(" + v + ".value, '$.properties." + propName + "'), json_extract(" + v + ".value, '$." + propName + "'))"
+		return "COALESCE(json_extract(" + v + ".value, '$.properties." + propName + "'), " +
+			"json_extract(" + v + ".value, '$." + propName + "'))"
 	}
 
 	if withSQL, ok := c.withAliases[prop.Variable]; ok {
-		return "COALESCE(json_extract(" + withSQL + ", '$.properties." + propName + "'), json_extract(" + withSQL + ", '$." + propName + "'))"
+		return "COALESCE(json_extract(" + withSQL + ", '$.properties." + propName + "'), " +
+			"json_extract(" + withSQL + ", '$." + propName + "'))"
 	}
 
 	if c.declaredRels[prop.Variable] {
@@ -272,7 +276,9 @@ func (c *Compiler) visitFunctionCall(fn FunctionCallExpr) (string, error) {
 	if lower == "labels" && len(fn.Args) == 1 {
 		if id, ok := fn.Args[0].(IdentifierExpr); ok {
 			v := c.escapeVar(id.Name)
-			return "CASE WHEN " + v + ".kind IN ('Service', 'App', 'FrontendApp', 'Library', 'SharedLibrary', 'Worker', 'CliTool') THEN json_array(" + v + ".kind, 'Project') ELSE json_array(" + v + ".kind) END", nil
+			return "CASE WHEN " + v + ".kind IN (" +
+				"'Service', 'App', 'FrontendApp', 'Library', 'SharedLibrary', 'Worker', 'CliTool') " +
+				"THEN json_array(" + v + ".kind, 'Project') ELSE json_array(" + v + ".kind) END", nil
 		}
 	}
 
@@ -343,7 +349,8 @@ func (c *Compiler) visitFunctionCall(fn FunctionCallExpr) (string, error) {
 	}
 	if lower == "size" && len(fn.Args) == 1 {
 		argSQL, _ := c.visitExpression(fn.Args[0])
-		return "CASE WHEN json_valid(" + argSQL + ") THEN json_array_length(" + argSQL + ") ELSE length(" + argSQL + ") END", nil
+		return "CASE WHEN json_valid(" + argSQL + ") THEN json_array_length(" + argSQL + ") " +
+			"ELSE length(" + argSQL + ") END", nil
 	}
 
 	// Default function call
@@ -555,7 +562,8 @@ func (c *Compiler) buildSubqueryPath(path PathPattern, prefix string) (string, [
 			conditions = append(conditions, targetIDSrc+" = "+relVar+".from_id")
 		case DirectionUndirected:
 			conditions = append(conditions, "("+relVar+".from_id = "+prevIDSrc+" OR "+relVar+".to_id = "+prevIDSrc+")")
-			conditions = append(conditions, targetIDSrc+" = CASE WHEN "+relVar+".from_id = "+prevIDSrc+" THEN "+relVar+".to_id ELSE "+relVar+".from_id END")
+			conditions = append(conditions,
+				targetIDSrc+" = CASE WHEN "+relVar+".from_id = "+prevIDSrc+" THEN "+relVar+".to_id ELSE "+relVar+".from_id END")
 		}
 
 		if len(elem.Relationship.Types) == 1 {

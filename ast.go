@@ -4,9 +4,9 @@ package cyphersql
 type Direction int
 
 const (
-	DirectionOutgoing Direction = iota // -[r]->
-	DirectionIncoming                  // <-[r]-
-	DirectionUndirected                // -[r]-
+	DirectionOutgoing   Direction = iota // -[r]->
+	DirectionIncoming                    // <-[r]-
+	DirectionUndirected                  // -[r]-
 )
 
 // NodePattern represents (var:Label {prop: val}).
@@ -134,26 +134,26 @@ func (ParameterExpr) exprNode() {}
 type BinaryOp string
 
 const (
-	OpAdd        BinaryOp = "+"
-	OpSub        BinaryOp = "-"
-	OpMul        BinaryOp = "*"
-	OpDiv        BinaryOp = "/"
-	OpMod        BinaryOp = "%"
-	OpPower      BinaryOp = "^"
-	OpEq         BinaryOp = "="
-	OpNeq        BinaryOp = "!="
-	OpLt         BinaryOp = "<"
-	OpLte        BinaryOp = "<="
-	OpGt         BinaryOp = ">"
-	OpGte        BinaryOp = ">="
-	OpAnd        BinaryOp = "AND"
-	OpOr         BinaryOp = "OR"
-	OpIn         BinaryOp = "IN"
-	OpStarts     BinaryOp = "STARTS WITH"
-	OpEnds       BinaryOp = "ENDS WITH"
-	OpContains   BinaryOp = "CONTAINS"
-	OpIs         BinaryOp = "IS"
-	OpIsNot      BinaryOp = "IS NOT"
+	OpAdd      BinaryOp = "+"
+	OpSub      BinaryOp = "-"
+	OpMul      BinaryOp = "*"
+	OpDiv      BinaryOp = "/"
+	OpMod      BinaryOp = "%"
+	OpPower    BinaryOp = "^"
+	OpEq       BinaryOp = "="
+	OpNeq      BinaryOp = "!="
+	OpLt       BinaryOp = "<"
+	OpLte      BinaryOp = "<="
+	OpGt       BinaryOp = ">"
+	OpGte      BinaryOp = ">="
+	OpAnd      BinaryOp = "AND"
+	OpOr       BinaryOp = "OR"
+	OpIn       BinaryOp = "IN"
+	OpStarts   BinaryOp = "STARTS WITH"
+	OpEnds     BinaryOp = "ENDS WITH"
+	OpContains BinaryOp = "CONTAINS"
+	OpIs       BinaryOp = "IS"
+	OpIsNot    BinaryOp = "IS NOT"
 )
 
 // BinaryExpr represents Left OP Right.

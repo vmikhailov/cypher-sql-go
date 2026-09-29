@@ -99,11 +99,13 @@ OFFSET {{ .Offset }}
 	))
 
 	collectSubqueryTemplate = template.Must(template.New("collectSubquery").Funcs(funcMap).Parse(
-		`(SELECT json_group_array({{ if .Distinct }}DISTINCT {{ end }}{{ .Projection }}) FILTER (WHERE {{ .Projection }} IS NOT NULL) FROM {{ .FromJoins }}{{ if .Where }} WHERE {{ .Where }}{{ end }})`,
+		`(SELECT json_group_array({{ if .Distinct }}DISTINCT {{ end }}{{ .Projection }}) ` +
+			`FILTER (WHERE {{ .Projection }} IS NOT NULL) FROM {{ .FromJoins }}{{ if .Where }} WHERE {{ .Where }}{{ end }})`,
 	))
 
 	countSubqueryTemplate = template.Must(template.New("countSubquery").Funcs(funcMap).Parse(
-		`(SELECT COUNT({{ if .Distinct }}DISTINCT {{ end }}{{ .Target }}) FROM {{ .FromJoins }}{{ if .Where }} WHERE {{ .Where }}{{ end }})`,
+		`(SELECT COUNT({{ if .Distinct }}DISTINCT {{ end }}{{ .Target }}) ` +
+			`FROM {{ .FromJoins }}{{ if .Where }} WHERE {{ .Where }}{{ end }})`,
 	))
 
 	existsSubqueryTemplate = template.Must(template.New("existsSubquery").Funcs(funcMap).Parse(
@@ -111,15 +113,31 @@ OFFSET {{ .Offset }}
 	))
 
 	quantifierTemplate = template.Must(template.New("quantifier").Funcs(funcMap).Parse(
-		`{{ if eq .Quantifier "any" }}(EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid({{ .List }}) THEN {{ .List }} ELSE '[]' END) AS {{ .Var }} WHERE {{ .Predicate }}))
-{{- else if eq .Quantifier "none" }}(NOT EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid({{ .List }}) THEN {{ .List }} ELSE '[]' END) AS {{ .Var }} WHERE {{ .Predicate }}))
-{{- else if eq .Quantifier "all" }}(NOT EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid({{ .List }}) THEN {{ .List }} ELSE '[]' END) AS {{ .Var }} WHERE NOT ({{ .Predicate }})))
-{{- else if eq .Quantifier "single" }}((SELECT COUNT(1) FROM json_each(CASE WHEN json_valid({{ .List }}) THEN {{ .List }} ELSE '[]' END) AS {{ .Var }} WHERE {{ .Predicate }}) = 1)
-{{- else }}(EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid({{ .List }}) THEN {{ .List }} ELSE '[]' END) AS {{ .Var }} WHERE {{ .Predicate }})){{ end }}`,
+		`{{ if eq .Quantifier "any" }}` +
+			`(EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid({{ .List }}) THEN {{ .List }} ELSE '[]' END) ` +
+			`AS {{ .Var }} WHERE {{ .Predicate }}))
+` +
+			`{{- else if eq .Quantifier "none" }}` +
+			`(NOT EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid({{ .List }}) THEN {{ .List }} ELSE '[]' END) ` +
+			`AS {{ .Var }} WHERE {{ .Predicate }}))
+` +
+			`{{- else if eq .Quantifier "all" }}` +
+			`(NOT EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid({{ .List }}) THEN {{ .List }} ELSE '[]' END) ` +
+			`AS {{ .Var }} WHERE NOT ({{ .Predicate }})))
+` +
+			`{{- else if eq .Quantifier "single" }}` +
+			`((SELECT COUNT(1) FROM json_each(CASE WHEN json_valid({{ .List }}) THEN {{ .List }} ELSE '[]' END) ` +
+			`AS {{ .Var }} WHERE {{ .Predicate }}) = 1)
+` +
+			`{{- else }}` +
+			`(EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid({{ .List }}) THEN {{ .List }} ELSE '[]' END) ` +
+			`AS {{ .Var }} WHERE {{ .Predicate }})){{ end }}`,
 	))
 
 	listCompTemplate = template.Must(template.New("listComp").Funcs(funcMap).Parse(
-		`(SELECT json_group_array({{ .Projection }}) FROM json_each(CASE WHEN json_valid({{ .List }}) THEN {{ .List }} ELSE '[]' END) AS {{ .Var }}{{ if .Filter }} WHERE {{ .Filter }}{{ end }})`,
+		`(SELECT json_group_array({{ .Projection }}) ` +
+			`FROM json_each(CASE WHEN json_valid({{ .List }}) THEN {{ .List }} ELSE '[]' END) ` +
+			`AS {{ .Var }}{{ if .Filter }} WHERE {{ .Filter }}{{ end }})`,
 	))
 )
 
