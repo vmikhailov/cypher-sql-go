@@ -4,12 +4,19 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
+	"sync"
 	"text/template"
 )
 
 var funcMap = template.FuncMap{
 	"join": strings.Join,
 	"trim": strings.TrimSpace,
+}
+
+var bufPool = sync.Pool{
+	New: func() any {
+		return new(bytes.Buffer)
+	},
 }
 
 // QueryModel holds the structured data for rendering a complete SQL query.
@@ -117,8 +124,11 @@ OFFSET {{ .Offset }}
 )
 
 func renderTemplate(tmpl *template.Template, data any) string {
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
+	buf := bufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufPool.Put(buf)
+
+	if err := tmpl.Execute(buf, data); err != nil {
 		return fmt.Sprintf("/* template render error: %v */", err)
 	}
 	return strings.TrimSpace(buf.String())

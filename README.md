@@ -6,7 +6,7 @@
 
 An **embedded OpenCypher to SQLite SQL compiler & query transpiler** written in pure Go.
 
-`cyphersql` enables you to execute declarative graph queries (OpenCypher) directly on top of standard SQLite database tables (`nodes` and `edges`) using relational indexes and SQLite JSON1 functions. **Zero external services, zero native C++ binaries (100% CGO-free), zero memory overhead.**
+`cyphersql` translates declarative graph queries (OpenCypher) into fast, deterministic SQLite queries using relational indexes and SQLite JSON1 functions. **Zero external services, zero native C++ binaries (100% CGO-free), in-process execution.**
 
 ---
 
@@ -132,10 +132,14 @@ CREATE INDEX idx_nodes_kind ON nodes(kind);
 
 ---
 
-## 🧪 Running Tests
+## 🧪 Performance & Benchmarks
 
 ```bash
-go test -v ./...
+go test -bench=. -benchmem
+```
+
+```
+BenchmarkCompile-12     43308     32755 ns/op     12723 B/op     195 allocs/op
 ```
 
 ---

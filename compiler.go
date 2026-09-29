@@ -1,7 +1,7 @@
 package cyphersql
 
 import (
-	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -148,7 +148,7 @@ func (c *Compiler) processPathPattern(path PathPattern, isOptional bool, joinKey
 	headVar := path.Head.Variable
 	if headVar == "" {
 		c.varIndex++
-		headVar = fmt.Sprintf("_n%d", c.varIndex)
+		headVar = "_n" + strconv.Itoa(c.varIndex)
 	}
 
 	if len(path.Chain) == 0 {
@@ -213,13 +213,13 @@ func (c *Compiler) processPathChain(path PathPattern, headVar string, isOptional
 		targetVar := targetNode.Variable
 		if targetVar == "" {
 			c.varIndex++
-			targetVar = fmt.Sprintf("_n%d", c.varIndex)
+			targetVar = "_n" + strconv.Itoa(c.varIndex)
 		}
 
 		relVar := rel.Variable
 		if relVar == "" {
 			c.varIndex++
-			relVar = fmt.Sprintf("_r%d", c.varIndex)
+			relVar = "_r" + strconv.Itoa(c.varIndex)
 		}
 
 		c.declaredRels[relVar] = true
@@ -232,21 +232,17 @@ func (c *Compiler) processPathChain(path PathPattern, headVar string, isOptional
 		var relOnConds []string
 		switch rel.Direction {
 		case DirectionOutgoing:
-			relOnConds = append(relOnConds, fmt.Sprintf("%s.from_id = %s.id", escRel, escPrev))
+			relOnConds = append(relOnConds, escRel+".from_id = "+escPrev+".id")
 		case DirectionIncoming:
-			relOnConds = append(relOnConds, fmt.Sprintf("%s.to_id = %s.id", escRel, escPrev))
+			relOnConds = append(relOnConds, escRel+".to_id = "+escPrev+".id")
 		case DirectionUndirected:
-			relOnConds = append(relOnConds, fmt.Sprintf("(%s.from_id = %s.id OR %s.to_id = %s.id)", escRel, escPrev, escRel, escPrev))
+			relOnConds = append(relOnConds, "("+escRel+".from_id = "+escPrev+".id OR "+escRel+".to_id = "+escPrev+".id)")
 		}
 
 		if len(rel.Types) == 1 {
-			relOnConds = append(relOnConds, fmt.Sprintf("%s.kind = '%s'", escRel, rel.Types[0]))
+			relOnConds = append(relOnConds, escRel+".kind = '"+rel.Types[0]+"'")
 		} else if len(rel.Types) > 1 {
-			var quoted []string
-			for _, t := range rel.Types {
-				quoted = append(quoted, fmt.Sprintf("'%s'", t))
-			}
-			relOnConds = append(relOnConds, fmt.Sprintf("%s.kind IN (%s)", escRel, strings.Join(quoted, ", ")))
+			relOnConds = append(relOnConds, escRel+".kind IN ('"+strings.Join(rel.Types, "', '")+"')")
 		}
 
 		c.joins = append(c.joins, JoinModel{
@@ -259,12 +255,11 @@ func (c *Compiler) processPathChain(path PathPattern, headVar string, isOptional
 		var targetOnConds []string
 		switch rel.Direction {
 		case DirectionOutgoing:
-			targetOnConds = append(targetOnConds, fmt.Sprintf("%s.id = %s.to_id", escTarget, escRel))
+			targetOnConds = append(targetOnConds, escTarget+".id = "+escRel+".to_id")
 		case DirectionIncoming:
-			targetOnConds = append(targetOnConds, fmt.Sprintf("%s.id = %s.from_id", escTarget, escRel))
+			targetOnConds = append(targetOnConds, escTarget+".id = "+escRel+".from_id")
 		case DirectionUndirected:
-			targetOnConds = append(targetOnConds, fmt.Sprintf("%s.id = CASE WHEN %s.from_id = %s.id THEN %s.to_id ELSE %s.from_id END",
-				escTarget, escRel, escPrev, escRel, escRel))
+			targetOnConds = append(targetOnConds, escTarget+".id = CASE WHEN "+escRel+".from_id = "+escPrev+".id THEN "+escRel+".to_id ELSE "+escRel+".from_id END")
 		}
 
 		c.addNodeFiltersToConditions(targetNode, targetVar, &targetOnConds)
@@ -291,7 +286,7 @@ func (c *Compiler) addNodeFiltersToConditions(node NodePattern, nodeVar string, 
 		for k, v := range node.Properties {
 			valSQL, err := c.visitExpression(v)
 			if err == nil {
-				*conditions = append(*conditions, fmt.Sprintf("json_extract(%s.properties, '$.%s') = %s", nVar, k, valSQL))
+				*conditions = append(*conditions, "json_extract("+nVar+".properties, '$."+k+"') = "+valSQL)
 			}
 		}
 	}
@@ -301,19 +296,15 @@ func (c *Compiler) compileNodeLabelPredicate(nVar, label string) string {
 	lower := strings.ToLower(label)
 	switch lower {
 	case "service":
-		return fmt.Sprintf("(%s.kind = 'Service' OR (%s.kind = 'Project' AND json_extract(%s.properties, '$.role') = 'Service' AND NOT EXISTS (SELECT 1 FROM nodes _s WHERE _s.kind = 'Service' AND (json_extract(_s.properties, '$.project_id') = %s.id OR json_extract(_s.properties, '$.name') = json_extract(%s.properties, '$.name')))))",
-			nVar, nVar, nVar, nVar, nVar)
+		return "(" + nVar + ".kind = 'Service' OR (" + nVar + ".kind = 'Project' AND json_extract(" + nVar + ".properties, '$.role') = 'Service' AND NOT EXISTS (SELECT 1 FROM nodes _s WHERE _s.kind = 'Service' AND (json_extract(_s.properties, '$.project_id') = " + nVar + ".id OR json_extract(_s.properties, '$.name') = json_extract(" + nVar + ".properties, '$.name')))))"
 	case "app":
-		return fmt.Sprintf("(%s.kind IN ('App', 'FrontendApp') OR (%s.kind = 'Project' AND json_extract(%s.properties, '$.role') IN ('App', 'FrontendApp') AND NOT EXISTS (SELECT 1 FROM nodes _a WHERE _a.kind IN ('App', 'FrontendApp') AND (json_extract(_a.properties, '$.project_id') = %s.id OR json_extract(_a.properties, '$.name') = json_extract(%s.properties, '$.name')))))",
-			nVar, nVar, nVar, nVar, nVar)
+		return "(" + nVar + ".kind IN ('App', 'FrontendApp') OR (" + nVar + ".kind = 'Project' AND json_extract(" + nVar + ".properties, '$.role') IN ('App', 'FrontendApp') AND NOT EXISTS (SELECT 1 FROM nodes _a WHERE _a.kind IN ('App', 'FrontendApp') AND (json_extract(_a.properties, '$.project_id') = " + nVar + ".id OR json_extract(_a.properties, '$.name') = json_extract(" + nVar + ".properties, '$.name')))))"
 	case "library":
-		return fmt.Sprintf("(%s.kind IN ('Library', 'SharedLibrary') OR (%s.kind = 'Project' AND (json_extract(%s.properties, '$.role') IN ('Library', 'SharedLibrary') OR json_extract(%s.properties, '$.is_library') = 1) AND NOT EXISTS (SELECT 1 FROM nodes _l WHERE _l.kind IN ('Library', 'SharedLibrary') AND (json_extract(_l.properties, '$.project_id') = %s.id OR json_extract(_l.properties, '$.name') = json_extract(%s.properties, '$.name')))))",
-			nVar, nVar, nVar, nVar, nVar, nVar)
+		return "(" + nVar + ".kind IN ('Library', 'SharedLibrary') OR (" + nVar + ".kind = 'Project' AND (json_extract(" + nVar + ".properties, '$.role') IN ('Library', 'SharedLibrary') OR json_extract(" + nVar + ".properties, '$.is_library') = 1) AND NOT EXISTS (SELECT 1 FROM nodes _l WHERE _l.kind IN ('Library', 'SharedLibrary') AND (json_extract(_l.properties, '$.project_id') = " + nVar + ".id OR json_extract(_l.properties, '$.name') = json_extract(" + nVar + ".properties, '$.name')))))"
 	case "project":
-		return fmt.Sprintf("(%s.kind = 'Project' OR (%s.kind IN ('Service', 'App', 'FrontendApp', 'Library', 'SharedLibrary', 'Worker', 'CliTool') AND NOT EXISTS (SELECT 1 FROM nodes _p WHERE _p.kind = 'Project' AND (json_extract(%s.properties, '$.project_id') = _p.id OR json_extract(_p.properties, '$.name') = json_extract(%s.properties, '$.name')))))",
-			nVar, nVar, nVar, nVar)
+		return "(" + nVar + ".kind = 'Project' OR (" + nVar + ".kind IN ('Service', 'App', 'FrontendApp', 'Library', 'SharedLibrary', 'Worker', 'CliTool') AND NOT EXISTS (SELECT 1 FROM nodes _p WHERE _p.kind = 'Project' AND (json_extract(_p.properties, '$.project_id') = " + nVar + ".id OR json_extract(_p.properties, '$.name') = json_extract(" + nVar + ".properties, '$.name')))))"
 	default:
-		return fmt.Sprintf("%s.kind = '%s'", nVar, label)
+		return nVar + ".kind = '" + label + "'"
 	}
 }
 
@@ -345,9 +336,9 @@ func (c *Compiler) processWithClauses(whereConditions *[]string, groupByColumns 
 				}
 				if id, ok := item.Expression.(IdentifierExpr); ok {
 					if c.declaredNodes[id.Name] {
-						*groupByColumns = append(*groupByColumns, fmt.Sprintf("%s.id", c.escapeVar(id.Name)))
+						*groupByColumns = append(*groupByColumns, c.escapeVar(id.Name)+".id")
 					} else if c.declaredRels[id.Name] {
-						*groupByColumns = append(*groupByColumns, fmt.Sprintf("%s.rowid", c.escapeVar(id.Name)))
+						*groupByColumns = append(*groupByColumns, c.escapeVar(id.Name)+".rowid")
 					} else {
 						exprSQL, _ := c.visitExpression(item.Expression)
 						*groupByColumns = append(*groupByColumns, exprSQL)
@@ -395,9 +386,9 @@ func (c *Compiler) populateReturnGroupBy(ret ReturnClause, groupByColumns *[]str
 		}
 		if id, ok := item.Expression.(IdentifierExpr); ok {
 			if c.declaredNodes[id.Name] {
-				*groupByColumns = append(*groupByColumns, fmt.Sprintf("%s.id", c.escapeVar(id.Name)))
+				*groupByColumns = append(*groupByColumns, c.escapeVar(id.Name)+".id")
 			} else if c.declaredRels[id.Name] {
-				*groupByColumns = append(*groupByColumns, fmt.Sprintf("%s.rowid", c.escapeVar(id.Name)))
+				*groupByColumns = append(*groupByColumns, c.escapeVar(id.Name)+".rowid")
 			} else if item.Alias != "" {
 				*groupByColumns = append(*groupByColumns, `"`+item.Alias+`"`)
 			} else {
@@ -431,7 +422,7 @@ func (c *Compiler) buildSelectColumns(ret ReturnClause) ([]string, error) {
 			}
 		}
 		if alias != "" {
-			cols = append(cols, fmt.Sprintf(`%s AS "%s"`, exprSQL, alias))
+			cols = append(cols, exprSQL+` AS "`+alias+`"`)
 		} else {
 			cols = append(cols, exprSQL)
 		}
@@ -458,7 +449,7 @@ func (c *Compiler) assembleQuerySQL(selectColumns []string, whereConditions []st
 			if item.IsDesc {
 				dir = "DESC"
 			}
-			orderItems = append(orderItems, fmt.Sprintf("%s %s", exprSQL, dir))
+			orderItems = append(orderItems, exprSQL+" "+dir)
 		}
 	}
 

@@ -316,3 +316,20 @@ func TestExecution_InMemorySQLite(t *testing.T) {
 		}
 	})
 }
+
+func BenchmarkCompile(b *testing.B) {
+	cypher := `
+		MATCH (p:Project) WHERE p.name = 'OrdersService'
+		OPTIONAL MATCH (p)-[:CONTAINS]->(ep:Endpoint)
+		OPTIONAL MATCH (p)-[:USES_DB]->(db:Database)
+		RETURN p.name AS project, collect(ep.name) AS eps, collect(db.name) AS dbs, count(ep) AS epCount
+	`
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := cyphersql.Compile(cypher)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
