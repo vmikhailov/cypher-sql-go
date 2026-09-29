@@ -20,6 +20,7 @@ var reservedKeywords = map[string]bool{
 // Compiler compiles a Cypher AST into SQLite SQL using structured models and templates.
 type Compiler struct {
 	query              *Query
+	schema             SchemaConfig
 	initialParams      map[string]any
 	params             map[string]any
 	declaredNodes      map[string]bool
@@ -36,10 +37,44 @@ type Compiler struct {
 	paramIndex         int
 }
 
-// NewCompiler creates a new Compiler.
+// NewCompiler creates a new Compiler with default schema.
 func NewCompiler(query *Query, params map[string]any) *Compiler {
+	return NewCompilerWithOptions(query, params, DefaultSchemaConfig())
+}
+
+// NewCompilerWithOptions creates a new Compiler with a custom SchemaConfig.
+func NewCompilerWithOptions(query *Query, params map[string]any, cfg SchemaConfig) *Compiler {
+	if cfg.NodesTable == "" {
+		cfg.NodesTable = "nodes"
+	}
+	if cfg.EdgesTable == "" {
+		cfg.EdgesTable = "edges"
+	}
+	if cfg.NodeIDCol == "" {
+		cfg.NodeIDCol = "id"
+	}
+	if cfg.NodeKindCol == "" {
+		cfg.NodeKindCol = "kind"
+	}
+	if cfg.NodePropsCol == "" {
+		cfg.NodePropsCol = "properties"
+	}
+	if cfg.EdgeFromCol == "" {
+		cfg.EdgeFromCol = "from_id"
+	}
+	if cfg.EdgeToCol == "" {
+		cfg.EdgeToCol = "to_id"
+	}
+	if cfg.EdgeKindCol == "" {
+		cfg.EdgeKindCol = "kind"
+	}
+	if cfg.EdgePropsCol == "" {
+		cfg.EdgePropsCol = "properties"
+	}
+
 	return &Compiler{
 		query:              query,
+		schema:             cfg,
 		initialParams:      params,
 		params:             make(map[string]any),
 		declaredNodes:      make(map[string]bool),
@@ -196,7 +231,7 @@ func (c *Compiler) bindHeadNode(
 	c.addNodeFiltersToConditions(headNode, headVar, &conds)
 
 	if c.fromTable == "" && !isOptional {
-		c.fromTable = "nodes"
+		c.fromTable = c.schema.NodesTable
 		c.fromAlias = escHead
 		*mainWhereConditions = append(*mainWhereConditions, conds...)
 	} else {
@@ -209,7 +244,7 @@ func (c *Compiler) bindHeadNode(
 		}
 		c.joins = append(c.joins, JoinModel{
 			Type:  joinKeyword,
-			Table: "nodes",
+			Table: c.schema.NodesTable,
 			Alias: escHead,
 			On:    onClause,
 		})
@@ -253,22 +288,27 @@ func (c *Compiler) processPathChain(
 		var relOnConds []string
 		switch rel.Direction {
 		case DirectionOutgoing:
-			relOnConds = append(relOnConds, escRel+".from_id = "+escPrev+".id")
+			relOnConds = append(relOnConds,
+				escRel+"."+c.schema.EdgeFromCol+" = "+escPrev+"."+c.schema.NodeIDCol)
 		case DirectionIncoming:
-			relOnConds = append(relOnConds, escRel+".to_id = "+escPrev+".id")
+			relOnConds = append(relOnConds,
+				escRel+"."+c.schema.EdgeToCol+" = "+escPrev+"."+c.schema.NodeIDCol)
 		case DirectionUndirected:
-			relOnConds = append(relOnConds, "("+escRel+".from_id = "+escPrev+".id OR "+escRel+".to_id = "+escPrev+".id)")
+			relOnConds = append(relOnConds,
+				"("+escRel+"."+c.schema.EdgeFromCol+" = "+escPrev+"."+c.schema.NodeIDCol+" OR "+
+					escRel+"."+c.schema.EdgeToCol+" = "+escPrev+"."+c.schema.NodeIDCol+")")
 		}
 
 		if len(rel.Types) == 1 {
-			relOnConds = append(relOnConds, escRel+".kind = '"+rel.Types[0]+"'")
+			relOnConds = append(relOnConds, escRel+"."+c.schema.EdgeKindCol+" = '"+rel.Types[0]+"'")
 		} else if len(rel.Types) > 1 {
-			relOnConds = append(relOnConds, escRel+".kind IN ('"+strings.Join(rel.Types, "', '")+"')")
+			relOnConds = append(relOnConds,
+				escRel+"."+c.schema.EdgeKindCol+" IN ('"+strings.Join(rel.Types, "', '")+"')")
 		}
 
 		c.joins = append(c.joins, JoinModel{
 			Type:  joinKeyword,
-			Table: "edges",
+			Table: c.schema.EdgesTable,
 			Alias: escRel,
 			On:    strings.Join(relOnConds, " AND "),
 		})
@@ -276,13 +316,16 @@ func (c *Compiler) processPathChain(
 		var targetOnConds []string
 		switch rel.Direction {
 		case DirectionOutgoing:
-			targetOnConds = append(targetOnConds, escTarget+".id = "+escRel+".to_id")
+			targetOnConds = append(targetOnConds,
+				escTarget+"."+c.schema.NodeIDCol+" = "+escRel+"."+c.schema.EdgeToCol)
 		case DirectionIncoming:
-			targetOnConds = append(targetOnConds, escTarget+".id = "+escRel+".from_id")
+			targetOnConds = append(targetOnConds,
+				escTarget+"."+c.schema.NodeIDCol+" = "+escRel+"."+c.schema.EdgeFromCol)
 		case DirectionUndirected:
 			targetOnConds = append(targetOnConds,
-				escTarget+".id = CASE WHEN "+escRel+".from_id = "+escPrev+".id THEN "+
-					escRel+".to_id ELSE "+escRel+".from_id END")
+				escTarget+"."+c.schema.NodeIDCol+" = CASE WHEN "+
+					escRel+"."+c.schema.EdgeFromCol+" = "+escPrev+"."+c.schema.NodeIDCol+" THEN "+
+					escRel+"."+c.schema.EdgeToCol+" ELSE "+escRel+"."+c.schema.EdgeFromCol+" END")
 		}
 
 		c.addNodeFiltersToConditions(targetNode, targetVar, &targetOnConds)
@@ -290,7 +333,7 @@ func (c *Compiler) processPathChain(
 
 		c.joins = append(c.joins, JoinModel{
 			Type:  joinKeyword,
-			Table: "nodes",
+			Table: c.schema.NodesTable,
 			Alias: escTarget,
 			On:    strings.Join(targetOnConds, " AND "),
 		})
@@ -309,43 +352,20 @@ func (c *Compiler) addNodeFiltersToConditions(node NodePattern, nodeVar string, 
 		for k, v := range node.Properties {
 			valSQL, err := c.visitExpression(v)
 			if err == nil {
-				*conditions = append(*conditions, "json_extract("+nVar+".properties, '$."+k+"') = "+valSQL)
+				*conditions = append(*conditions,
+					"json_extract("+nVar+"."+c.schema.NodePropsCol+", '$."+k+"') = "+valSQL)
 			}
 		}
 	}
 }
 
 func (c *Compiler) compileNodeLabelPredicate(nVar, label string) string {
-	lower := strings.ToLower(label)
-	switch lower {
-	case "service":
-		return "(" + nVar + ".kind = 'Service' OR (" + nVar + ".kind = 'Project' AND " +
-			"json_extract(" + nVar + ".properties, '$.role') = 'Service' AND NOT EXISTS (" +
-			"SELECT 1 FROM nodes _s WHERE _s.kind = 'Service' AND (" +
-			"json_extract(_s.properties, '$.project_id') = " + nVar + ".id OR " +
-			"json_extract(_s.properties, '$.name') = json_extract(" + nVar + ".properties, '$.name')))))"
-	case "app":
-		return "(" + nVar + ".kind IN ('App', 'FrontendApp') OR (" + nVar + ".kind = 'Project' AND " +
-			"json_extract(" + nVar + ".properties, '$.role') IN ('App', 'FrontendApp') AND NOT EXISTS (" +
-			"SELECT 1 FROM nodes _a WHERE _a.kind IN ('App', 'FrontendApp') AND (" +
-			"json_extract(_a.properties, '$.project_id') = " + nVar + ".id OR " +
-			"json_extract(_a.properties, '$.name') = json_extract(" + nVar + ".properties, '$.name')))))"
-	case "library":
-		return "(" + nVar + ".kind IN ('Library', 'SharedLibrary') OR (" + nVar + ".kind = 'Project' AND (" +
-			"json_extract(" + nVar + ".properties, '$.role') IN ('Library', 'SharedLibrary') OR " +
-			"json_extract(" + nVar + ".properties, '$.is_library') = 1) AND NOT EXISTS (" +
-			"SELECT 1 FROM nodes _l WHERE _l.kind IN ('Library', 'SharedLibrary') AND (" +
-			"json_extract(_l.properties, '$.project_id') = " + nVar + ".id OR " +
-			"json_extract(_l.properties, '$.name') = json_extract(" + nVar + ".properties, '$.name')))))"
-	case "project":
-		return "(" + nVar + ".kind = 'Project' OR (" + nVar + ".kind IN (" +
-			"'Service', 'App', 'FrontendApp', 'Library', 'SharedLibrary', 'Worker', 'CliTool') AND NOT EXISTS (" +
-			"SELECT 1 FROM nodes _p WHERE _p.kind = 'Project' AND (" +
-			"json_extract(_p.properties, '$.project_id') = " + nVar + ".id OR " +
-			"json_extract(_p.properties, '$.name') = json_extract(" + nVar + ".properties, '$.name')))))"
-	default:
-		return nVar + ".kind = '" + label + "'"
+	if c.schema.LabelResolver != nil {
+		if pred, ok := c.schema.LabelResolver(nVar, label); ok {
+			return pred
+		}
 	}
+	return nVar + "." + c.schema.NodeKindCol + " = '" + label + "'"
 }
 
 func (c *Compiler) processWithClauses(
@@ -380,7 +400,7 @@ func (c *Compiler) processWithClauses(
 				}
 				if id, ok := item.Expression.(IdentifierExpr); ok {
 					if c.declaredNodes[id.Name] {
-						*groupByColumns = append(*groupByColumns, c.escapeVar(id.Name)+".id")
+						*groupByColumns = append(*groupByColumns, c.escapeVar(id.Name)+"."+c.schema.NodeIDCol)
 					} else if c.declaredRels[id.Name] {
 						*groupByColumns = append(*groupByColumns, c.escapeVar(id.Name)+".rowid")
 					} else {
@@ -430,7 +450,7 @@ func (c *Compiler) populateReturnGroupBy(ret ReturnClause, groupByColumns *[]str
 		}
 		if id, ok := item.Expression.(IdentifierExpr); ok {
 			if c.declaredNodes[id.Name] {
-				*groupByColumns = append(*groupByColumns, c.escapeVar(id.Name)+".id")
+				*groupByColumns = append(*groupByColumns, c.escapeVar(id.Name)+"."+c.schema.NodeIDCol)
 			} else if c.declaredRels[id.Name] {
 				*groupByColumns = append(*groupByColumns, c.escapeVar(id.Name)+".rowid")
 			} else if item.Alias != "" {

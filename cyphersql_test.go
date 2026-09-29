@@ -323,6 +323,70 @@ func TestExecution_InMemorySQLite(t *testing.T) {
 	})
 }
 
+func TestCustomSchemaConfig_CustomTablesAndColumns(t *testing.T) {
+	cfg := cyphersql.SchemaConfig{
+		NodesTable:   "graph_vertices",
+		EdgesTable:   "graph_relationships",
+		NodeIDCol:    "vertex_id",
+		NodeKindCol:  "label",
+		NodePropsCol: "data",
+		EdgeFromCol:  "src_vertex",
+		EdgeToCol:    "dst_vertex",
+		EdgeKindCol:  "type",
+		EdgePropsCol: "metadata",
+	}
+
+	cypher := `
+		MATCH (a:Person)-[r:FRIENDS_WITH]->(b:Person)
+		WHERE a.age > 21
+		RETURN a.name AS friend1, b.name AS friend2, r.since AS met
+	`
+	compiled, err := cyphersql.CompileWithSchema(cypher, cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(compiled.SQL, "FROM graph_vertices a") {
+		t.Errorf("expected custom nodes table, got:\n%s", compiled.SQL)
+	}
+	if !strings.Contains(compiled.SQL, "a.label = 'Person'") {
+		t.Errorf("expected custom node kind col, got:\n%s", compiled.SQL)
+	}
+	expectedJoin := "JOIN graph_relationships r ON r.src_vertex = a.vertex_id AND r.type = 'FRIENDS_WITH'"
+	if !strings.Contains(compiled.SQL, expectedJoin) {
+		t.Errorf("expected custom edge table and from col, got:\n%s", compiled.SQL)
+	}
+	if !strings.Contains(compiled.SQL, "JOIN graph_vertices b ON b.vertex_id = r.dst_vertex") {
+		t.Errorf("expected custom target join, got:\n%s", compiled.SQL)
+	}
+	if !strings.Contains(compiled.SQL, "json_extract(a.data, '$.age')") {
+		t.Errorf("expected custom node props col, got:\n%s", compiled.SQL)
+	}
+	if !strings.Contains(compiled.SQL, "json_extract(r.metadata, '$.since')") {
+		t.Errorf("expected custom edge props col, got:\n%s", compiled.SQL)
+	}
+}
+
+func TestCustomLabelResolver_Hook(t *testing.T) {
+	cfg := cyphersql.DefaultSchemaConfig()
+	cfg.LabelResolver = func(nodeVar, label string) (string, bool) {
+		if label == "Special" {
+			return nodeVar + ".kind IN ('VIP', 'Admin')", true
+		}
+		return "", false
+	}
+
+	cypher := `MATCH (u:Special) RETURN u.name`
+	compiled, err := cyphersql.CompileWithSchema(cypher, cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(compiled.SQL, "u.kind IN ('VIP', 'Admin')") {
+		t.Errorf("expected custom label resolver predicate, got:\n%s", compiled.SQL)
+	}
+}
+
 func BenchmarkCompile(b *testing.B) {
 	cypher := `
 		MATCH (p:Project) WHERE p.name = 'OrdersService'

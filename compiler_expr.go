@@ -56,12 +56,14 @@ func (c *Compiler) visitIdentifier(id IdentifierExpr) string {
 		return escaped + ".value"
 	}
 	if c.declaredNodes[id.Name] {
-		return "json_object('id', " + escaped + ".id, 'kind', " + escaped + ".kind, " +
-			"'properties', json(" + escaped + ".properties))"
+		return "json_object('id', " + escaped + "." + c.schema.NodeIDCol + ", 'kind', " +
+			escaped + "." + c.schema.NodeKindCol + ", 'properties', json(" +
+			escaped + "." + c.schema.NodePropsCol + "))"
 	}
 	if c.declaredRels[id.Name] {
-		return "json_object('type', " + escaped + ".kind, 'from', " + escaped + ".from_id, " +
-			"'to', " + escaped + ".to_id, 'properties', json(" + escaped + ".properties))"
+		return "json_object('type', " + escaped + "." + c.schema.EdgeKindCol + ", 'from', " +
+			escaped + "." + c.schema.EdgeFromCol + ", 'to', " + escaped + "." + c.schema.EdgeToCol +
+			", 'properties', json(" + escaped + "." + c.schema.EdgePropsCol + "))"
 	}
 	return escaped
 }
@@ -91,27 +93,27 @@ func (c *Compiler) visitPropertyAccess(prop PropertyAccessExpr) string {
 		case "id":
 			return v + ".rowid"
 		case "kind", "type":
-			return v + ".kind"
+			return v + "." + c.schema.EdgeKindCol
 		case "from", "from_id":
-			return v + ".from_id"
+			return v + "." + c.schema.EdgeFromCol
 		case "to", "to_id":
-			return v + ".to_id"
+			return v + "." + c.schema.EdgeToCol
 		case "properties":
-			return v + ".properties"
+			return v + "." + c.schema.EdgePropsCol
 		default:
-			return "json_extract(" + v + ".properties, '$." + propName + "')"
+			return "json_extract(" + v + "." + c.schema.EdgePropsCol + ", '$." + propName + "')"
 		}
 	}
 
 	switch strings.ToLower(propName) {
 	case "id":
-		return v + ".id"
+		return v + "." + c.schema.NodeIDCol
 	case "kind":
-		return v + ".kind"
+		return v + "." + c.schema.NodeKindCol
 	case "properties":
-		return v + ".properties"
+		return v + "." + c.schema.NodePropsCol
 	default:
-		return "json_extract(" + v + ".properties, '$." + propName + "')"
+		return "json_extract(" + v + "." + c.schema.NodePropsCol + ", '$." + propName + "')"
 	}
 }
 
@@ -276,9 +278,7 @@ func (c *Compiler) visitFunctionCall(fn FunctionCallExpr) (string, error) {
 	if lower == "labels" && len(fn.Args) == 1 {
 		if id, ok := fn.Args[0].(IdentifierExpr); ok {
 			v := c.escapeVar(id.Name)
-			return "CASE WHEN " + v + ".kind IN (" +
-				"'Service', 'App', 'FrontendApp', 'Library', 'SharedLibrary', 'Worker', 'CliTool') " +
-				"THEN json_array(" + v + ".kind, 'Project') ELSE json_array(" + v + ".kind) END", nil
+			return "json_array(" + v + "." + c.schema.NodeKindCol + ")", nil
 		}
 	}
 
@@ -518,7 +518,7 @@ func (c *Compiler) buildSubqueryPath(path PathPattern, prefix string) (string, [
 	if !headIsOuter {
 		c.varIndex++
 		actualHeadVar = prefix + "_h" + strconv.Itoa(c.varIndex)
-		fromJoins.WriteString("nodes " + actualHeadVar)
+		fromJoins.WriteString(c.schema.NodesTable + " " + actualHeadVar)
 		c.addNodeFiltersToConditions(path.Head, actualHeadVar, &conditions)
 	}
 
@@ -537,39 +537,50 @@ func (c *Compiler) buildSubqueryPath(path PathPattern, prefix string) (string, [
 				actualTargetVar = prefix + "_t" + strconv.Itoa(c.varIndex)
 			}
 			if fromJoins.Len() == 0 {
-				fromJoins.WriteString("edges " + relVar + " CROSS JOIN nodes " + actualTargetVar)
+				fromJoins.WriteString(c.schema.EdgesTable + " " + relVar + " CROSS JOIN " +
+					c.schema.NodesTable + " " + actualTargetVar)
 			} else {
-				fromJoins.WriteString(" CROSS JOIN edges " + relVar + " CROSS JOIN nodes " + actualTargetVar)
+				fromJoins.WriteString(" CROSS JOIN " + c.schema.EdgesTable + " " + relVar +
+					" CROSS JOIN " + c.schema.NodesTable + " " + actualTargetVar)
 			}
 			c.addNodeFiltersToConditions(targetNode, actualTargetVar, &conditions)
 		} else {
 			if fromJoins.Len() == 0 {
-				fromJoins.WriteString("edges " + relVar)
+				fromJoins.WriteString(c.schema.EdgesTable + " " + relVar)
 			} else {
-				fromJoins.WriteString(" CROSS JOIN edges " + relVar)
+				fromJoins.WriteString(" CROSS JOIN " + c.schema.EdgesTable + " " + relVar)
 			}
 		}
 
-		prevIDSrc := prevVar + ".id"
-		targetIDSrc := actualTargetVar + ".id"
+		prevIDSrc := prevVar + "." + c.schema.NodeIDCol
+		targetIDSrc := actualTargetVar + "." + c.schema.NodeIDCol
 
 		switch elem.Relationship.Direction {
 		case DirectionOutgoing:
-			conditions = append(conditions, relVar+".from_id = "+prevIDSrc)
-			conditions = append(conditions, targetIDSrc+" = "+relVar+".to_id")
-		case DirectionIncoming:
-			conditions = append(conditions, relVar+".to_id = "+prevIDSrc)
-			conditions = append(conditions, targetIDSrc+" = "+relVar+".from_id")
-		case DirectionUndirected:
-			conditions = append(conditions, "("+relVar+".from_id = "+prevIDSrc+" OR "+relVar+".to_id = "+prevIDSrc+")")
 			conditions = append(conditions,
-				targetIDSrc+" = CASE WHEN "+relVar+".from_id = "+prevIDSrc+" THEN "+relVar+".to_id ELSE "+relVar+".from_id END")
+				relVar+"."+c.schema.EdgeFromCol+" = "+prevIDSrc)
+			conditions = append(conditions,
+				targetIDSrc+" = "+relVar+"."+c.schema.EdgeToCol)
+		case DirectionIncoming:
+			conditions = append(conditions,
+				relVar+"."+c.schema.EdgeToCol+" = "+prevIDSrc)
+			conditions = append(conditions,
+				targetIDSrc+" = "+relVar+"."+c.schema.EdgeFromCol)
+		case DirectionUndirected:
+			conditions = append(conditions,
+				"("+relVar+"."+c.schema.EdgeFromCol+" = "+prevIDSrc+" OR "+
+					relVar+"."+c.schema.EdgeToCol+" = "+prevIDSrc+")")
+			conditions = append(conditions,
+				targetIDSrc+" = CASE WHEN "+relVar+"."+c.schema.EdgeFromCol+" = "+prevIDSrc+
+					" THEN "+relVar+"."+c.schema.EdgeToCol+" ELSE "+relVar+"."+c.schema.EdgeFromCol+" END")
 		}
 
 		if len(elem.Relationship.Types) == 1 {
-			conditions = append(conditions, relVar+".kind = '"+elem.Relationship.Types[0]+"'")
+			conditions = append(conditions,
+				relVar+"."+c.schema.EdgeKindCol+" = '"+elem.Relationship.Types[0]+"'")
 		} else if len(elem.Relationship.Types) > 1 {
-			conditions = append(conditions, relVar+".kind IN ('"+strings.Join(elem.Relationship.Types, "', '")+"')")
+			conditions = append(conditions,
+				relVar+"."+c.schema.EdgeKindCol+" IN ('"+strings.Join(elem.Relationship.Types, "', '")+"')")
 		}
 
 		prevVar = actualTargetVar
