@@ -84,6 +84,58 @@ CREATE INDEX idx_nodes_kind ON nodes(kind);
 
 ---
 
+## ⚙️ Custom Schema & Polymorphic Label Resolvers
+
+`cyphersql` works out-of-the-box with the standard `nodes` and `edges` tables, but is fully decoupled from table
+names, column names, and domain semantics via `SchemaConfig`.
+
+### 1. Custom Table & Column Mappings
+
+If your existing SQLite database uses different table or column names:
+
+```go
+cfg := cyphersql.SchemaConfig{
+    NodesTable:   "graph_vertices",
+    EdgesTable:   "graph_relationships",
+    NodeIDCol:    "vertex_id",
+    NodeKindCol:  "label",
+    NodePropsCol: "data",
+    EdgeFromCol:  "src_id",
+    EdgeToCol:    "dst_id",
+    EdgeKindCol:  "rel_type",
+    EdgePropsCol: "metadata",
+}
+
+compiled, err := cyphersql.CompileWithSchema(cypherQuery, cfg)
+```
+
+### 2. Custom Label Resolver (Polymorphism & Role Mapping)
+
+In domain-specific graphs (e.g., code analysis or role-based access), a single label like `:Special` or `:Worker`
+might map to multiple underlying node types or JSON properties. You can provide an optional `LabelResolver` hook:
+
+```go
+cfg := cyphersql.DefaultSchemaConfig()
+cfg.LabelResolver = func(nodeVar, label string) (string, bool) {
+    switch label {
+    case "Special":
+        // Maps (u:Special) to (u.kind IN ('VIP', 'Admin'))
+        return nodeVar + ".kind IN ('VIP', 'Admin')", true
+    case "ActiveService":
+        // Maps (s:ActiveService) to kind check + JSON status flag
+        return fmt.Sprintf("(%s.kind = 'Service' AND json_extract(%s.properties, '$.status') = 'active')",
+            nodeVar, nodeVar), true
+    default:
+        // Fall back to standard equality: nodeVar.kind = 'label'
+        return "", false
+    }
+}
+
+compiled, err := cyphersql.CompileWithSchema(cypherQuery, cfg)
+```
+
+---
+
 ## 🚀 Quickstart
 
 ### 1. Install
