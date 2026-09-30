@@ -4,11 +4,11 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/vmikhailov/cypher-sql-go)](https://goreportcard.com/report/github.com/vmikhailov/cypher-sql-go)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-An **embedded OpenCypher to SQLite SQL compiler & query transpiler** written in pure Go.
+An **embedded read-only OpenCypher to SQL compiler & query transpiler** written in pure Go.
 
-`cyphersql` translates declarative graph queries (OpenCypher) into fast, deterministic SQLite queries using relational
-indexes and SQLite JSON1 functions. **Zero external services, zero native C++ binaries (100% CGO-free), in-process
-execution.**
+`cyphersql` translates declarative graph queries (OpenCypher) into fast, deterministic SQLite and ClickHouse queries
+using relational indexes and JSON functions. **Zero external services, zero native C++ binaries (100% CGO-free),
+read-only safety for AI agents, in-process execution.**
 
 ---
 
@@ -20,7 +20,9 @@ Memgraph) or hand-writing complex 200-line SQL recursive CTEs.
 
 `cyphersql` bridges this gap:
 * **Write Cypher:** Clean, declarative graph queries that LLMs and AI agents excel at generating.
-* **Run on SQLite:** Rock-solid, single-file, serverless relational database engine.
+* **Run on SQLite & ClickHouse:** Rock-solid relational storage or blazing-fast columnar engines.
+* **Read-Only by Design:** Safe for LLM agents, Model Context Protocol (MCP) tools, and analytics without risk of
+  destructive queries (`DROP`, `DELETE`, `CREATE`).
 * **CGO-Free:** Fully compatible with pure-Go SQLite drivers (`modernc.org/sqlite`) for seamless cross-compilation.
 
 ---
