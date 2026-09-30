@@ -1,5 +1,6 @@
 # CypherSQL for Go ⚡ (`cypher-sql-go`)
 
+[![CI](https://github.com/vmikhailov/cypher-sql-go/actions/workflows/ci.yml/badge.svg)](https://github.com/vmikhailov/cypher-sql-go/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/vmikhailov/cypher-sql-go.svg)](https://pkg.go.dev/github.com/vmikhailov/cypher-sql-go)
 [![Go Report Card](https://goreportcard.com/badge/github.com/vmikhailov/cypher-sql-go)](https://goreportcard.com/report/github.com/vmikhailov/cypher-sql-go)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -150,6 +151,17 @@ compiled, err := cyphersql.CompileWithSchema(cypherQuery, chConfig)
 | :--- | :--- | :--- | :--- |
 | **SQLite** (default) | `json_extract(p, '$.name')` | `json_group_array(name) FILTER (...)` | `json_array(...)` |
 | **ClickHouse** | `JSONExtractString(p, 'name')` | `groupArrayIf(name, name != '')` | `[items...]` |
+
+---
+
+## 📂 Runnable Examples
+
+Check the [`examples/`](./examples) directory for complete, runnable applications:
+
+* **[SQLite Quickstart](./examples/sqlite_quickstart/main.go):** Full in-memory database setup, data insertion,
+  Cypher compilation, and query execution.
+* **[ClickHouse Transpiler](./examples/clickhouse_transpiler/main.go):** Comparing generated SQL for SQLite vs.
+  ClickHouse side-by-side.
 
 ---
 
