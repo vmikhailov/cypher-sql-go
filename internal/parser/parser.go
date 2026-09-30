@@ -1,9 +1,11 @@
-package cyphersql
+package parser
 
 import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/vmikhailov/cypher-sql-go/internal/ast"
 )
 
 // Parser parses tokens into an AST.
@@ -54,8 +56,8 @@ func (p *Parser) expect(t TokenType) error {
 }
 
 // Parse parses the entire Cypher query.
-func (p *Parser) Parse() (*Query, error) {
-	q := &Query{}
+func (p *Parser) Parse() (*ast.Query, error) {
+	q := &ast.Query{}
 
 	// 1. Matches and intermediate WITH clauses
 	for p.current.Type == TokenMatch || p.current.Type == TokenOptional || p.current.Type == TokenWith {
@@ -112,7 +114,7 @@ func (p *Parser) Parse() (*Query, error) {
 			} else if p.current.Type == TokenAsc {
 				p.nextToken()
 			}
-			q.OrderBy = append(q.OrderBy, OrderByItem{Expression: item, IsDesc: isDesc})
+			q.OrderBy = append(q.OrderBy, ast.OrderByItem{Expression: item, IsDesc: isDesc})
 			if p.current.Type == TokenComma {
 				p.nextToken()
 			} else {
@@ -143,7 +145,7 @@ func (p *Parser) Parse() (*Query, error) {
 	return q, nil
 }
 
-func (p *Parser) parseMatch() (*MatchClause, error) {
+func (p *Parser) parseMatch() (*ast.MatchClause, error) {
 	isOpt := false
 	if p.current.Type == TokenOptional {
 		isOpt = true
@@ -153,7 +155,7 @@ func (p *Parser) parseMatch() (*MatchClause, error) {
 		return nil, err
 	}
 
-	var paths []PathPattern
+	var paths []ast.PathPattern
 	for {
 		path, err := p.parsePathPattern()
 		if err != nil {
@@ -167,7 +169,7 @@ func (p *Parser) parseMatch() (*MatchClause, error) {
 		}
 	}
 
-	var whereExpr Expression
+	var whereExpr ast.Expression
 	if p.current.Type == TokenWhere {
 		p.nextToken()
 		w, err := p.parseExpression()
@@ -177,14 +179,14 @@ func (p *Parser) parseMatch() (*MatchClause, error) {
 		whereExpr = w
 	}
 
-	return &MatchClause{
+	return &ast.MatchClause{
 		IsOptional: isOpt,
 		Paths:      paths,
 		Where:      whereExpr,
 	}, nil
 }
 
-func (p *Parser) parseWith() (*WithClause, error) {
+func (p *Parser) parseWith() (*ast.WithClause, error) {
 	p.nextToken() // skip WITH
 	isDistinct := false
 	if p.current.Type == TokenDistinct {
@@ -192,7 +194,7 @@ func (p *Parser) parseWith() (*WithClause, error) {
 		p.nextToken()
 	}
 
-	var items []ProjectionItem
+	var items []ast.ProjectionItem
 	for {
 		item, err := p.parseProjectionItem()
 		if err != nil {
@@ -206,7 +208,7 @@ func (p *Parser) parseWith() (*WithClause, error) {
 		}
 	}
 
-	var whereExpr Expression
+	var whereExpr ast.Expression
 	if p.current.Type == TokenWhere {
 		p.nextToken()
 		w, err := p.parseExpression()
@@ -216,14 +218,14 @@ func (p *Parser) parseWith() (*WithClause, error) {
 		whereExpr = w
 	}
 
-	return &WithClause{
+	return &ast.WithClause{
 		IsDistinct: isDistinct,
 		Items:      items,
 		Where:      whereExpr,
 	}, nil
 }
 
-func (p *Parser) parseReturn() (*ReturnClause, error) {
+func (p *Parser) parseReturn() (*ast.ReturnClause, error) {
 	p.nextToken() // skip RETURN
 	isDistinct := false
 	if p.current.Type == TokenDistinct {
@@ -231,7 +233,7 @@ func (p *Parser) parseReturn() (*ReturnClause, error) {
 		p.nextToken()
 	}
 
-	var items []ProjectionItem
+	var items []ast.ProjectionItem
 	for {
 		item, err := p.parseProjectionItem()
 		if err != nil {
@@ -245,13 +247,13 @@ func (p *Parser) parseReturn() (*ReturnClause, error) {
 		}
 	}
 
-	return &ReturnClause{
+	return &ast.ReturnClause{
 		IsDistinct: isDistinct,
 		Items:      items,
 	}, nil
 }
 
-func (p *Parser) parseProjectionItem() (*ProjectionItem, error) {
+func (p *Parser) parseProjectionItem() (*ast.ProjectionItem, error) {
 	expr, err := p.parseExpression()
 	if err != nil {
 		return nil, err
@@ -267,16 +269,16 @@ func (p *Parser) parseProjectionItem() (*ProjectionItem, error) {
 		alias = al
 	}
 
-	return &ProjectionItem{Expression: expr, Alias: alias}, nil
+	return &ast.ProjectionItem{Expression: expr, Alias: alias}, nil
 }
 
-func (p *Parser) parsePathPattern() (*PathPattern, error) {
+func (p *Parser) parsePathPattern() (*ast.PathPattern, error) {
 	head, err := p.parseNodePattern()
 	if err != nil {
 		return nil, err
 	}
 
-	var chain []PathElement
+	var chain []ast.PathElement
 	for p.current.Type == TokenDash || p.current.Type == TokenArrowL {
 		elem, err := p.parsePathElement()
 		if err != nil {
@@ -285,15 +287,15 @@ func (p *Parser) parsePathPattern() (*PathPattern, error) {
 		chain = append(chain, *elem)
 	}
 
-	return &PathPattern{Head: *head, Chain: chain}, nil
+	return &ast.PathPattern{Head: *head, Chain: chain}, nil
 }
 
-func (p *Parser) parseNodePattern() (*NodePattern, error) {
+func (p *Parser) parseNodePattern() (*ast.NodePattern, error) {
 	if err := p.expect(TokenLParen); err != nil {
 		return nil, err
 	}
 
-	node := &NodePattern{}
+	node := &ast.NodePattern{}
 	if p.isNameToken() {
 		v, err := p.parseName()
 		if err != nil {
@@ -325,11 +327,11 @@ func (p *Parser) parseNodePattern() (*NodePattern, error) {
 	return node, nil
 }
 
-func (p *Parser) parsePathElement() (*PathElement, error) {
-	rel := RelationshipPattern{Direction: DirectionUndirected}
+func (p *Parser) parsePathElement() (*ast.PathElement, error) {
+	rel := ast.RelationshipPattern{Direction: ast.DirectionUndirected}
 
 	if p.current.Type == TokenArrowL {
-		rel.Direction = DirectionIncoming
+		rel.Direction = ast.DirectionIncoming
 		p.nextToken() // skip <-
 		if err := p.expect(TokenLBracket); err != nil {
 			return nil, err
@@ -354,16 +356,16 @@ func (p *Parser) parsePathElement() (*PathElement, error) {
 				return nil, err
 			}
 			if p.current.Type == TokenArrowR {
-				rel.Direction = DirectionOutgoing
+				rel.Direction = ast.DirectionOutgoing
 				p.nextToken()
 			} else if p.current.Type == TokenDash {
-				rel.Direction = DirectionUndirected
+				rel.Direction = ast.DirectionUndirected
 				p.nextToken()
 			} else {
 				return nil, p.errorf("expected '->' or '-' after relationship, got %s", p.current.Type)
 			}
 		} else if p.current.Type == TokenArrowR {
-			rel.Direction = DirectionOutgoing
+			rel.Direction = ast.DirectionOutgoing
 			p.nextToken()
 		} else {
 			return nil, p.errorf("expected '[' or '->' after '-', got %s", p.current.Type)
@@ -375,10 +377,10 @@ func (p *Parser) parsePathElement() (*PathElement, error) {
 		return nil, err
 	}
 
-	return &PathElement{Relationship: rel, Target: *target}, nil
+	return &ast.PathElement{Relationship: rel, Target: *target}, nil
 }
 
-func (p *Parser) parseRelationshipDetails(rel *RelationshipPattern) error {
+func (p *Parser) parseRelationshipDetails(rel *ast.RelationshipPattern) error {
 	if p.isNameToken() && p.current.Type != TokenColon &&
 		p.current.Type != TokenAsterisk && p.current.Type != TokenLBrace {
 		v, err := p.parseName()
@@ -439,11 +441,11 @@ func (p *Parser) parseRelationshipDetails(rel *RelationshipPattern) error {
 	return nil
 }
 
-func (p *Parser) parseMapLiteralEntries() (map[string]Expression, error) {
+func (p *Parser) parseMapLiteralEntries() (map[string]ast.Expression, error) {
 	if err := p.expect(TokenLBrace); err != nil {
 		return nil, err
 	}
-	entries := make(map[string]Expression)
+	entries := make(map[string]ast.Expression)
 	if p.current.Type == TokenRBrace {
 		p.nextToken()
 		return entries, nil
@@ -475,13 +477,13 @@ func (p *Parser) parseMapLiteralEntries() (map[string]Expression, error) {
 	return entries, nil
 }
 
-// Expression parsing with Precedence Climbing
+// ast.Expression parsing with Precedence Climbing
 
-func (p *Parser) parseExpression() (Expression, error) {
+func (p *Parser) parseExpression() (ast.Expression, error) {
 	return p.parseOr()
 }
 
-func (p *Parser) parseOr() (Expression, error) {
+func (p *Parser) parseOr() (ast.Expression, error) {
 	left, err := p.parseAnd()
 	if err != nil {
 		return nil, err
@@ -492,12 +494,12 @@ func (p *Parser) parseOr() (Expression, error) {
 		if err != nil {
 			return nil, err
 		}
-		left = BinaryExpr{Left: left, Op: OpOr, Right: right}
+		left = ast.BinaryExpr{Left: left, Op: ast.OpOr, Right: right}
 	}
 	return left, nil
 }
 
-func (p *Parser) parseAnd() (Expression, error) {
+func (p *Parser) parseAnd() (ast.Expression, error) {
 	left, err := p.parseNot()
 	if err != nil {
 		return nil, err
@@ -508,24 +510,24 @@ func (p *Parser) parseAnd() (Expression, error) {
 		if err != nil {
 			return nil, err
 		}
-		left = BinaryExpr{Left: left, Op: OpAnd, Right: right}
+		left = ast.BinaryExpr{Left: left, Op: ast.OpAnd, Right: right}
 	}
 	return left, nil
 }
 
-func (p *Parser) parseNot() (Expression, error) {
+func (p *Parser) parseNot() (ast.Expression, error) {
 	if p.current.Type == TokenNot {
 		p.nextToken()
 		operand, err := p.parseNot()
 		if err != nil {
 			return nil, err
 		}
-		return UnaryExpr{Op: OpNot, Operand: operand}, nil
+		return ast.UnaryExpr{Op: ast.OpNot, Operand: operand}, nil
 	}
 	return p.parseComparison()
 }
 
-func (p *Parser) parseComparison() (Expression, error) {
+func (p *Parser) parseComparison() (ast.Expression, error) {
 	left, err := p.parseAdditive()
 	if err != nil {
 		return nil, err
@@ -539,49 +541,49 @@ func (p *Parser) parseComparison() (Expression, error) {
 			if err != nil {
 				return nil, err
 			}
-			left = BinaryExpr{Left: left, Op: OpEq, Right: right}
+			left = ast.BinaryExpr{Left: left, Op: ast.OpEq, Right: right}
 		case TokenNotEqual:
 			p.nextToken()
 			right, err := p.parseAdditive()
 			if err != nil {
 				return nil, err
 			}
-			left = BinaryExpr{Left: left, Op: OpNeq, Right: right}
+			left = ast.BinaryExpr{Left: left, Op: ast.OpNeq, Right: right}
 		case TokenLt:
 			p.nextToken()
 			right, err := p.parseAdditive()
 			if err != nil {
 				return nil, err
 			}
-			left = BinaryExpr{Left: left, Op: OpLt, Right: right}
+			left = ast.BinaryExpr{Left: left, Op: ast.OpLt, Right: right}
 		case TokenLte:
 			p.nextToken()
 			right, err := p.parseAdditive()
 			if err != nil {
 				return nil, err
 			}
-			left = BinaryExpr{Left: left, Op: OpLte, Right: right}
+			left = ast.BinaryExpr{Left: left, Op: ast.OpLte, Right: right}
 		case TokenGt:
 			p.nextToken()
 			right, err := p.parseAdditive()
 			if err != nil {
 				return nil, err
 			}
-			left = BinaryExpr{Left: left, Op: OpGt, Right: right}
+			left = ast.BinaryExpr{Left: left, Op: ast.OpGt, Right: right}
 		case TokenGte:
 			p.nextToken()
 			right, err := p.parseAdditive()
 			if err != nil {
 				return nil, err
 			}
-			left = BinaryExpr{Left: left, Op: OpGte, Right: right}
+			left = ast.BinaryExpr{Left: left, Op: ast.OpGte, Right: right}
 		case TokenIn:
 			p.nextToken()
 			right, err := p.parseAdditive()
 			if err != nil {
 				return nil, err
 			}
-			left = BinaryExpr{Left: left, Op: OpIn, Right: right}
+			left = ast.BinaryExpr{Left: left, Op: ast.OpIn, Right: right}
 		case TokenStarts:
 			p.nextToken()
 			if err := p.expect(TokenWith); err != nil {
@@ -591,7 +593,7 @@ func (p *Parser) parseComparison() (Expression, error) {
 			if err != nil {
 				return nil, err
 			}
-			left = BinaryExpr{Left: left, Op: OpStarts, Right: right}
+			left = ast.BinaryExpr{Left: left, Op: ast.OpStarts, Right: right}
 		case TokenEnds:
 			p.nextToken()
 			if err := p.expect(TokenWith); err != nil {
@@ -601,14 +603,14 @@ func (p *Parser) parseComparison() (Expression, error) {
 			if err != nil {
 				return nil, err
 			}
-			left = BinaryExpr{Left: left, Op: OpEnds, Right: right}
+			left = ast.BinaryExpr{Left: left, Op: ast.OpEnds, Right: right}
 		case TokenContains:
 			p.nextToken()
 			right, err := p.parseAdditive()
 			if err != nil {
 				return nil, err
 			}
-			left = BinaryExpr{Left: left, Op: OpContains, Right: right}
+			left = ast.BinaryExpr{Left: left, Op: ast.OpContains, Right: right}
 		case TokenIs:
 			p.nextToken()
 			if p.current.Type == TokenNot {
@@ -616,10 +618,10 @@ func (p *Parser) parseComparison() (Expression, error) {
 				if err := p.expect(TokenNull); err != nil {
 					return nil, err
 				}
-				left = BinaryExpr{Left: left, Op: OpIsNot, Right: LiteralExpr{Kind: LiteralNull, Raw: "NULL"}}
+				left = ast.BinaryExpr{Left: left, Op: ast.OpIsNot, Right: ast.LiteralExpr{Kind: ast.LiteralNull, Raw: "NULL"}}
 			} else if p.current.Type == TokenNull {
 				p.nextToken()
-				left = BinaryExpr{Left: left, Op: OpIs, Right: LiteralExpr{Kind: LiteralNull, Raw: "NULL"}}
+				left = ast.BinaryExpr{Left: left, Op: ast.OpIs, Right: ast.LiteralExpr{Kind: ast.LiteralNull, Raw: "NULL"}}
 			} else {
 				return nil, p.errorf("expected NULL or NOT NULL after IS")
 			}
@@ -629,56 +631,56 @@ func (p *Parser) parseComparison() (Expression, error) {
 	}
 }
 
-func (p *Parser) parseAdditive() (Expression, error) {
+func (p *Parser) parseAdditive() (ast.Expression, error) {
 	left, err := p.parseMultiplicative()
 	if err != nil {
 		return nil, err
 	}
 	for p.current.Type == TokenPlus || p.current.Type == TokenDash {
-		op := OpAdd
+		op := ast.OpAdd
 		if p.current.Type == TokenDash {
-			op = OpSub
+			op = ast.OpSub
 		}
 		p.nextToken()
 		right, err := p.parseMultiplicative()
 		if err != nil {
 			return nil, err
 		}
-		left = BinaryExpr{Left: left, Op: op, Right: right}
+		left = ast.BinaryExpr{Left: left, Op: op, Right: right}
 	}
 	return left, nil
 }
 
-func (p *Parser) parseMultiplicative() (Expression, error) {
+func (p *Parser) parseMultiplicative() (ast.Expression, error) {
 	left, err := p.parseUnary()
 	if err != nil {
 		return nil, err
 	}
 	for p.current.Type == TokenAsterisk || p.current.Type == TokenSlash || p.current.Type == TokenPercent {
-		op := OpMul
+		op := ast.OpMul
 		if p.current.Type == TokenSlash {
-			op = OpDiv
+			op = ast.OpDiv
 		} else if p.current.Type == TokenPercent {
-			op = OpMod
+			op = ast.OpMod
 		}
 		p.nextToken()
 		right, err := p.parseUnary()
 		if err != nil {
 			return nil, err
 		}
-		left = BinaryExpr{Left: left, Op: op, Right: right}
+		left = ast.BinaryExpr{Left: left, Op: op, Right: right}
 	}
 	return left, nil
 }
 
-func (p *Parser) parseUnary() (Expression, error) {
+func (p *Parser) parseUnary() (ast.Expression, error) {
 	if p.current.Type == TokenDash {
 		p.nextToken()
 		operand, err := p.parseUnary()
 		if err != nil {
 			return nil, err
 		}
-		return UnaryExpr{Op: OpMinus, Operand: operand}, nil
+		return ast.UnaryExpr{Op: ast.OpMinus, Operand: operand}, nil
 	}
 	if p.current.Type == TokenPlus {
 		p.nextToken()
@@ -686,12 +688,12 @@ func (p *Parser) parseUnary() (Expression, error) {
 		if err != nil {
 			return nil, err
 		}
-		return UnaryExpr{Op: OpPlus, Operand: operand}, nil
+		return ast.UnaryExpr{Op: ast.OpPlus, Operand: operand}, nil
 	}
 	return p.parsePostfix()
 }
 
-func (p *Parser) parsePostfix() (Expression, error) {
+func (p *Parser) parsePostfix() (ast.Expression, error) {
 	expr, err := p.parsePrimary()
 	if err != nil {
 		return nil, err
@@ -705,12 +707,12 @@ func (p *Parser) parsePostfix() (Expression, error) {
 				return nil, err
 			}
 
-			if id, ok := expr.(IdentifierExpr); ok {
-				expr = PropertyAccessExpr{Variable: id.Name, Property: prop}
-			} else if pa, ok := expr.(PropertyAccessExpr); ok {
-				expr = PropertyAccessExpr{Variable: pa.Variable + "." + pa.Property, Property: prop}
+			if id, ok := expr.(ast.IdentifierExpr); ok {
+				expr = ast.PropertyAccessExpr{Variable: id.Name, Property: prop}
+			} else if pa, ok := expr.(ast.PropertyAccessExpr); ok {
+				expr = ast.PropertyAccessExpr{Variable: pa.Variable + "." + pa.Property, Property: prop}
 			} else {
-				expr = PropertyAccessExpr{Variable: fmt.Sprintf("%v", expr), Property: prop}
+				expr = ast.PropertyAccessExpr{Variable: fmt.Sprintf("%v", expr), Property: prop}
 			}
 		} else if p.current.Type == TokenColon {
 			// Label check: e.g. p:Service or ep:Endpoint
@@ -719,7 +721,11 @@ func (p *Parser) parsePostfix() (Expression, error) {
 			if err != nil {
 				return nil, err
 			}
-			expr = BinaryExpr{Left: expr, Op: OpEq, Right: LiteralExpr{Kind: LiteralString, StrVal: label, Raw: label}}
+			expr = ast.BinaryExpr{
+				Left:  expr,
+				Op:    ast.OpEq,
+				Right: ast.LiteralExpr{Kind: ast.LiteralString, StrVal: label, Raw: label},
+			}
 		} else {
 			break
 		}
@@ -727,14 +733,14 @@ func (p *Parser) parsePostfix() (Expression, error) {
 	return expr, nil
 }
 
-func (p *Parser) parsePrimary() (Expression, error) {
+func (p *Parser) parsePrimary() (ast.Expression, error) {
 	switch p.current.Type {
 	case TokenAsterisk:
 		p.nextToken()
-		return WildcardExpr{}, nil
+		return ast.WildcardExpr{}, nil
 
 	case TokenLParen:
-		// Check if this is a PatternExpr (n)-[:REL]->(m) or parenthesized expr
+		// Check if this is a ast.PatternExpr (n)-[:REL]->(m) or parenthesized expr
 		return p.parseParenOrPattern()
 
 	case TokenLBracket:
@@ -746,36 +752,36 @@ func (p *Parser) parsePrimary() (Expression, error) {
 		if err != nil {
 			return nil, err
 		}
-		return MapExpr{Entries: entries}, nil
+		return ast.MapExpr{Entries: entries}, nil
 
 	case TokenString:
 		val := p.current.Value
 		p.nextToken()
-		return LiteralExpr{Kind: LiteralString, StrVal: val, Raw: val}, nil
+		return ast.LiteralExpr{Kind: ast.LiteralString, StrVal: val, Raw: val}, nil
 
 	case TokenNumber:
 		val := p.current.Value
 		p.nextToken()
 		isInteger := !strings.Contains(val, ".")
 		num, _ := strconv.ParseFloat(val, 64)
-		return LiteralExpr{Kind: LiteralNumber, NumVal: num, IsInteger: isInteger, Raw: val}, nil
+		return ast.LiteralExpr{Kind: ast.LiteralNumber, NumVal: num, IsInteger: isInteger, Raw: val}, nil
 
 	case TokenTrue:
 		p.nextToken()
-		return LiteralExpr{Kind: LiteralBool, BoolVal: true, Raw: "true"}, nil
+		return ast.LiteralExpr{Kind: ast.LiteralBool, BoolVal: true, Raw: "true"}, nil
 
 	case TokenFalse:
 		p.nextToken()
-		return LiteralExpr{Kind: LiteralBool, BoolVal: false, Raw: "false"}, nil
+		return ast.LiteralExpr{Kind: ast.LiteralBool, BoolVal: false, Raw: "false"}, nil
 
 	case TokenNull:
 		p.nextToken()
-		return LiteralExpr{Kind: LiteralNull, Raw: "null"}, nil
+		return ast.LiteralExpr{Kind: ast.LiteralNull, Raw: "null"}, nil
 
 	case TokenParameter:
 		name := p.current.Value
 		p.nextToken()
-		return ParameterExpr{Name: name}, nil
+		return ast.ParameterExpr{Name: name}, nil
 
 	case TokenCase:
 		return p.parseCase()
@@ -792,7 +798,7 @@ func (p *Parser) parsePrimary() (Expression, error) {
 		if err := p.expect(TokenRParen); err != nil {
 			return nil, err
 		}
-		return FunctionCallExpr{Name: "exists", Args: []Expression{inner}}, nil
+		return ast.FunctionCallExpr{Name: "exists", Args: []ast.Expression{inner}}, nil
 
 	case TokenIdent:
 		ident := p.current.Value
@@ -824,7 +830,7 @@ func (p *Parser) parsePrimary() (Expression, error) {
 			if err := p.expect(TokenRParen); err != nil {
 				return nil, err
 			}
-			return ListPredicateExpr{
+			return ast.ListPredicateExpr{
 				Quantifier: lower,
 				Variable:   varName,
 				List:       listExpr,
@@ -842,7 +848,7 @@ func (p *Parser) parsePrimary() (Expression, error) {
 				isDistinct = true
 				p.nextToken()
 			}
-			var args []Expression
+			var args []ast.Expression
 			if p.current.Type != TokenRParen {
 				for {
 					arg, err := p.parseExpression()
@@ -860,18 +866,18 @@ func (p *Parser) parsePrimary() (Expression, error) {
 			if err := p.expect(TokenRParen); err != nil {
 				return nil, err
 			}
-			return FunctionCallExpr{Name: ident, IsDistinct: isDistinct, Args: args}, nil
+			return ast.FunctionCallExpr{Name: ident, IsDistinct: isDistinct, Args: args}, nil
 		}
 
-		return IdentifierExpr{Name: ident}, nil
+		return ast.IdentifierExpr{Name: ident}, nil
 
 	default:
 		return nil, p.errorf("unexpected token in primary expression: %s (%q)", p.current.Type, p.current.Value)
 	}
 }
 
-func (p *Parser) parseParenOrPattern() (Expression, error) {
-	// Try parsing as PatternExpr (n)-[:REL]->(m)
+func (p *Parser) parseParenOrPattern() (ast.Expression, error) {
+	// Try parsing as ast.PatternExpr (n)-[:REL]->(m)
 	// A pattern must have at least one chain element (i.e. a relationship)
 	// We can tentatively parse
 	if p.peek.Type == TokenColon || p.peek.Type == TokenRParen || p.peek.Type == TokenIdent || p.peek.Type == TokenLBrace {
@@ -886,7 +892,7 @@ func (p *Parser) parseParenOrPattern() (Expression, error) {
 
 		path, err := p.parsePathPattern()
 		if err == nil && len(path.Chain) > 0 {
-			return PatternExpr{Path: *path}, nil
+			return ast.PatternExpr{Path: *path}, nil
 		}
 
 		// Rollback if not a pattern
@@ -911,12 +917,12 @@ func (p *Parser) parseParenOrPattern() (Expression, error) {
 	return inner, nil
 }
 
-func (p *Parser) parseBracketExpression() (Expression, error) {
+func (p *Parser) parseBracketExpression() (ast.Expression, error) {
 	p.nextToken() // skip [
 
 	if p.current.Type == TokenRBracket {
 		p.nextToken()
-		return ListExpr{Items: nil}, nil
+		return ast.ListExpr{Items: nil}, nil
 	}
 
 	// Check if this is a list comprehension: [x IN list WHERE ... | expr]
@@ -930,7 +936,7 @@ func (p *Parser) parseBracketExpression() (Expression, error) {
 			return nil, err
 		}
 
-		var filterExpr Expression
+		var filterExpr ast.Expression
 		if p.current.Type == TokenWhere {
 			p.nextToken()
 			f, err := p.parseExpression()
@@ -940,7 +946,7 @@ func (p *Parser) parseBracketExpression() (Expression, error) {
 			filterExpr = f
 		}
 
-		var projExpr Expression
+		var projExpr ast.Expression
 		if p.current.Type == TokenPipe {
 			p.nextToken()
 			pr, err := p.parseExpression()
@@ -953,7 +959,7 @@ func (p *Parser) parseBracketExpression() (Expression, error) {
 		if err := p.expect(TokenRBracket); err != nil {
 			return nil, err
 		}
-		return ListComprehensionExpr{
+		return ast.ListComprehensionExpr{
 			Variable:   varName,
 			List:       listExpr,
 			Filter:     filterExpr,
@@ -973,7 +979,7 @@ func (p *Parser) parseBracketExpression() (Expression, error) {
 
 		path, err := p.parsePathPattern()
 		if err == nil && len(path.Chain) > 0 {
-			var filterExpr Expression
+			var filterExpr ast.Expression
 			if p.current.Type == TokenWhere {
 				p.nextToken()
 				f, err := p.parseExpression()
@@ -992,7 +998,7 @@ func (p *Parser) parseBracketExpression() (Expression, error) {
 				if err := p.expect(TokenRBracket); err != nil {
 					return nil, err
 				}
-				return PatternComprehensionExpr{
+				return ast.PatternComprehensionExpr{
 					Path:       *path,
 					Filter:     filterExpr,
 					Projection: projExpr,
@@ -1011,7 +1017,7 @@ func (p *Parser) parseBracketExpression() (Expression, error) {
 	}
 
 	// Normal list literal [elem1, elem2, ...]
-	var items []Expression
+	var items []ast.Expression
 	for {
 		item, err := p.parseExpression()
 		if err != nil {
@@ -1027,13 +1033,13 @@ func (p *Parser) parseBracketExpression() (Expression, error) {
 	if err := p.expect(TokenRBracket); err != nil {
 		return nil, err
 	}
-	return ListExpr{Items: items}, nil
+	return ast.ListExpr{Items: items}, nil
 }
 
-func (p *Parser) parseCase() (Expression, error) {
+func (p *Parser) parseCase() (ast.Expression, error) {
 	p.nextToken() // skip CASE
 
-	var testExpr Expression
+	var testExpr ast.Expression
 	if p.current.Type != TokenWhen {
 		t, err := p.parseExpression()
 		if err != nil {
@@ -1042,7 +1048,7 @@ func (p *Parser) parseCase() (Expression, error) {
 		testExpr = t
 	}
 
-	var whenBranches []CaseWhen
+	var whenBranches []ast.CaseWhen
 	for p.current.Type == TokenWhen {
 		p.nextToken() // skip WHEN
 		w, err := p.parseExpression()
@@ -1056,10 +1062,10 @@ func (p *Parser) parseCase() (Expression, error) {
 		if err != nil {
 			return nil, err
 		}
-		whenBranches = append(whenBranches, CaseWhen{When: w, Then: th})
+		whenBranches = append(whenBranches, ast.CaseWhen{When: w, Then: th})
 	}
 
-	var elseExpr Expression
+	var elseExpr ast.Expression
 	if p.current.Type == TokenElse {
 		p.nextToken() // skip ELSE
 		el, err := p.parseExpression()
@@ -1073,7 +1079,7 @@ func (p *Parser) parseCase() (Expression, error) {
 		return nil, err
 	}
 
-	return CaseExpr{
+	return ast.CaseExpr{
 		Test:         testExpr,
 		WhenBranches: whenBranches,
 		Else:         elseExpr,

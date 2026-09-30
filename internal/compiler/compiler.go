@@ -1,6 +1,7 @@
-package cyphersql
+package compiler
 
 import (
+	"github.com/vmikhailov/cypher-sql-go/internal/ast"
 	"strconv"
 	"strings"
 )
@@ -19,7 +20,7 @@ var reservedKeywords = map[string]bool{
 
 // Compiler compiles a Cypher AST into SQLite SQL using structured models and templates.
 type Compiler struct {
-	query              *Query
+	query              *ast.Query
 	schema             SchemaConfig
 	initialParams      map[string]any
 	params             map[string]any
@@ -38,12 +39,12 @@ type Compiler struct {
 }
 
 // NewCompiler creates a new Compiler with default schema.
-func NewCompiler(query *Query, params map[string]any) *Compiler {
+func NewCompiler(query *ast.Query, params map[string]any) *Compiler {
 	return NewCompilerWithOptions(query, params, DefaultSchemaConfig())
 }
 
 // NewCompilerWithOptions creates a new Compiler with a custom SchemaConfig.
-func NewCompilerWithOptions(query *Query, params map[string]any, cfg SchemaConfig) *Compiler {
+func NewCompilerWithOptions(query *ast.Query, params map[string]any, cfg SchemaConfig) *Compiler {
 	if cfg.NodesTable == "" {
 		cfg.NodesTable = "nodes"
 	}
@@ -146,7 +147,7 @@ func (c *Compiler) Compile() (*CompiledQuery, error) {
 	}, nil
 }
 
-func (c *Compiler) processMatchClause(match MatchClause, mainWhereConditions *[]string) error {
+func (c *Compiler) processMatchClause(match ast.MatchClause, mainWhereConditions *[]string) error {
 	isOptional := match.IsOptional
 	joinKeyword := "JOIN"
 	if isOptional {
@@ -184,7 +185,7 @@ func (c *Compiler) processMatchClause(match MatchClause, mainWhereConditions *[]
 }
 
 func (c *Compiler) processPathPattern(
-	path PathPattern,
+	path ast.PathPattern,
 	isOptional bool,
 	joinKeyword string,
 	mainWhereConditions *[]string,
@@ -221,7 +222,7 @@ func (c *Compiler) processPathPattern(
 }
 
 func (c *Compiler) bindHeadNode(
-	headNode NodePattern,
+	headNode ast.NodePattern,
 	headVar string,
 	isOptional bool,
 	joinKeyword string,
@@ -257,7 +258,7 @@ func (c *Compiler) bindHeadNode(
 }
 
 func (c *Compiler) processPathChain(
-	path PathPattern,
+	path ast.PathPattern,
 	headVar string,
 	isOptional bool,
 	joinKeyword string,
@@ -290,13 +291,13 @@ func (c *Compiler) processPathChain(
 
 		var relOnConds []string
 		switch rel.Direction {
-		case DirectionOutgoing:
+		case ast.DirectionOutgoing:
 			relOnConds = append(relOnConds,
 				escRel+"."+c.schema.EdgeFromCol+" = "+escPrev+"."+c.schema.NodeIDCol)
-		case DirectionIncoming:
+		case ast.DirectionIncoming:
 			relOnConds = append(relOnConds,
 				escRel+"."+c.schema.EdgeToCol+" = "+escPrev+"."+c.schema.NodeIDCol)
-		case DirectionUndirected:
+		case ast.DirectionUndirected:
 			relOnConds = append(relOnConds,
 				"("+escRel+"."+c.schema.EdgeFromCol+" = "+escPrev+"."+c.schema.NodeIDCol+" OR "+
 					escRel+"."+c.schema.EdgeToCol+" = "+escPrev+"."+c.schema.NodeIDCol+")")
@@ -318,13 +319,13 @@ func (c *Compiler) processPathChain(
 
 		var targetOnConds []string
 		switch rel.Direction {
-		case DirectionOutgoing:
+		case ast.DirectionOutgoing:
 			targetOnConds = append(targetOnConds,
 				escTarget+"."+c.schema.NodeIDCol+" = "+escRel+"."+c.schema.EdgeToCol)
-		case DirectionIncoming:
+		case ast.DirectionIncoming:
 			targetOnConds = append(targetOnConds,
 				escTarget+"."+c.schema.NodeIDCol+" = "+escRel+"."+c.schema.EdgeFromCol)
-		case DirectionUndirected:
+		case ast.DirectionUndirected:
 			targetOnConds = append(targetOnConds,
 				escTarget+"."+c.schema.NodeIDCol+" = CASE WHEN "+
 					escRel+"."+c.schema.EdgeFromCol+" = "+escPrev+"."+c.schema.NodeIDCol+" THEN "+
@@ -346,7 +347,7 @@ func (c *Compiler) processPathChain(
 	return nil
 }
 
-func (c *Compiler) addNodeFiltersToConditions(node NodePattern, nodeVar string, conditions *[]string) {
+func (c *Compiler) addNodeFiltersToConditions(node ast.NodePattern, nodeVar string, conditions *[]string) {
 	nVar := c.escapeVar(nodeVar)
 	for _, label := range node.Labels {
 		*conditions = append(*conditions, c.compileNodeLabelPredicate(nVar, label))
@@ -401,7 +402,7 @@ func (c *Compiler) processWithClauses(
 				if c.hasAggregation(item.Expression) {
 					continue
 				}
-				if id, ok := item.Expression.(IdentifierExpr); ok {
+				if id, ok := item.Expression.(ast.IdentifierExpr); ok {
 					if c.declaredNodes[id.Name] {
 						*groupByColumns = append(*groupByColumns, c.escapeVar(id.Name)+"."+c.schema.NodeIDCol)
 					} else if c.declaredRels[id.Name] {
@@ -429,7 +430,7 @@ func (c *Compiler) processWithClauses(
 	return nil
 }
 
-func (c *Compiler) populateReturnGroupBy(ret ReturnClause, groupByColumns *[]string) {
+func (c *Compiler) populateReturnGroupBy(ret ast.ReturnClause, groupByColumns *[]string) {
 	if len(*groupByColumns) > 0 {
 		return
 	}
@@ -448,10 +449,10 @@ func (c *Compiler) populateReturnGroupBy(ret ReturnClause, groupByColumns *[]str
 		if c.hasAggregation(item.Expression) {
 			continue
 		}
-		if _, ok := item.Expression.(WildcardExpr); ok {
+		if _, ok := item.Expression.(ast.WildcardExpr); ok {
 			continue
 		}
-		if id, ok := item.Expression.(IdentifierExpr); ok {
+		if id, ok := item.Expression.(ast.IdentifierExpr); ok {
 			if c.declaredNodes[id.Name] {
 				*groupByColumns = append(*groupByColumns, c.escapeVar(id.Name)+"."+c.schema.NodeIDCol)
 			} else if c.declaredRels[id.Name] {
@@ -471,10 +472,10 @@ func (c *Compiler) populateReturnGroupBy(ret ReturnClause, groupByColumns *[]str
 	}
 }
 
-func (c *Compiler) buildSelectColumns(ret ReturnClause) ([]string, error) {
+func (c *Compiler) buildSelectColumns(ret ast.ReturnClause) ([]string, error) {
 	var cols []string
 	for _, item := range ret.Items {
-		if _, ok := item.Expression.(WildcardExpr); ok {
+		if _, ok := item.Expression.(ast.WildcardExpr); ok {
 			cols = append(cols, "*")
 			continue
 		}
@@ -484,7 +485,7 @@ func (c *Compiler) buildSelectColumns(ret ReturnClause) ([]string, error) {
 		}
 		alias := item.Alias
 		if alias == "" {
-			if id, ok := item.Expression.(IdentifierExpr); ok {
+			if id, ok := item.Expression.(ast.IdentifierExpr); ok {
 				alias = id.Name
 			}
 		}

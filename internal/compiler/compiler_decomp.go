@@ -1,18 +1,19 @@
-package cyphersql
+package compiler
 
 import (
+	"github.com/vmikhailov/cypher-sql-go/internal/ast"
 	"strings"
 )
 
 type decomposedBranch struct {
-	Match          MatchClause
-	Path           PathPattern
+	Match          ast.MatchClause
+	Path           ast.PathPattern
 	RootVar        string
 	IntroducedVars map[string]bool
 	IsCompiled     bool
 }
 
-func (c *Compiler) detectDecomposedOptionalMatches(query *Query) {
+func (c *Compiler) detectDecomposedOptionalMatches(query *ast.Query) {
 	optionalCount := 0
 	for _, m := range query.Matches {
 		if m.IsOptional {
@@ -107,7 +108,7 @@ func (c *Compiler) detectDecomposedOptionalMatches(query *Query) {
 	}
 }
 
-func (c *Compiler) isMatchDecomposed(match MatchClause) bool {
+func (c *Compiler) isMatchDecomposed(match ast.MatchClause) bool {
 	if !match.IsOptional || len(c.decomposedBranches) == 0 {
 		return false
 	}
@@ -124,7 +125,7 @@ func (c *Compiler) isMatchDecomposed(match MatchClause) bool {
 	return false
 }
 
-func hasVariableOutsideAggregation(query *Query, currentMatchIdx int, varName string) bool {
+func hasVariableOutsideAggregation(query *ast.Query, currentMatchIdx int, varName string) bool {
 	// 1. Check other MATCH clauses
 	for idx, match := range query.Matches {
 		if idx == currentMatchIdx {
@@ -206,41 +207,41 @@ func hasVariableOutsideAggregation(query *Query, currentMatchIdx int, varName st
 	return false
 }
 
-func hasVariable(expr Expression, varName string) bool {
+func hasVariable(expr ast.Expression, varName string) bool {
 	if expr == nil {
 		return false
 	}
 	switch e := expr.(type) {
-	case IdentifierExpr:
+	case ast.IdentifierExpr:
 		return strings.EqualFold(e.Name, varName)
-	case PropertyAccessExpr:
+	case ast.PropertyAccessExpr:
 		return strings.EqualFold(e.Variable, varName)
-	case BinaryExpr:
+	case ast.BinaryExpr:
 		return hasVariable(e.Left, varName) || hasVariable(e.Right, varName)
-	case UnaryExpr:
+	case ast.UnaryExpr:
 		return hasVariable(e.Operand, varName)
-	case FunctionCallExpr:
+	case ast.FunctionCallExpr:
 		for _, arg := range e.Args {
 			if hasVariable(arg, varName) {
 				return true
 			}
 		}
 		return false
-	case ListExpr:
+	case ast.ListExpr:
 		for _, item := range e.Items {
 			if hasVariable(item, varName) {
 				return true
 			}
 		}
 		return false
-	case MapExpr:
+	case ast.MapExpr:
 		for _, v := range e.Entries {
 			if hasVariable(v, varName) {
 				return true
 			}
 		}
 		return false
-	case CaseExpr:
+	case ast.CaseExpr:
 		if e.Test != nil && hasVariable(e.Test, varName) {
 			return true
 		}
@@ -250,23 +251,23 @@ func hasVariable(expr Expression, varName string) bool {
 			}
 		}
 		return e.Else != nil && hasVariable(e.Else, varName)
-	case ListComprehensionExpr:
+	case ast.ListComprehensionExpr:
 		return hasVariable(e.List, varName) ||
 			(e.Filter != nil && hasVariable(e.Filter, varName)) ||
 			(e.Projection != nil && hasVariable(e.Projection, varName))
-	case ListPredicateExpr:
+	case ast.ListPredicateExpr:
 		return hasVariable(e.List, varName) || hasVariable(e.Predicate, varName)
 	default:
 		return false
 	}
 }
 
-func hasVariableOutsideAggregationExpr(expr Expression, varName string, insideAgg bool) bool {
+func hasVariableOutsideAggregationExpr(expr ast.Expression, varName string, insideAgg bool) bool {
 	if expr == nil {
 		return false
 	}
 	switch e := expr.(type) {
-	case FunctionCallExpr:
+	case ast.FunctionCallExpr:
 		lower := strings.ToLower(e.Name)
 		if lower == "collect" || lower == "count" {
 			for _, arg := range e.Args {
@@ -282,36 +283,36 @@ func hasVariableOutsideAggregationExpr(expr Expression, varName string, insideAg
 			}
 		}
 		return false
-	case IdentifierExpr:
+	case ast.IdentifierExpr:
 		if strings.EqualFold(e.Name, varName) {
 			return !insideAgg
 		}
 		return false
-	case PropertyAccessExpr:
+	case ast.PropertyAccessExpr:
 		if strings.EqualFold(e.Variable, varName) {
 			return !insideAgg
 		}
 		return false
-	case BinaryExpr:
+	case ast.BinaryExpr:
 		return hasVariableOutsideAggregationExpr(e.Left, varName, insideAgg) ||
 			hasVariableOutsideAggregationExpr(e.Right, varName, insideAgg)
-	case UnaryExpr:
+	case ast.UnaryExpr:
 		return hasVariableOutsideAggregationExpr(e.Operand, varName, insideAgg)
-	case ListExpr:
+	case ast.ListExpr:
 		for _, item := range e.Items {
 			if hasVariableOutsideAggregationExpr(item, varName, insideAgg) {
 				return true
 			}
 		}
 		return false
-	case MapExpr:
+	case ast.MapExpr:
 		for _, v := range e.Entries {
 			if hasVariableOutsideAggregationExpr(v, varName, insideAgg) {
 				return true
 			}
 		}
 		return false
-	case CaseExpr:
+	case ast.CaseExpr:
 		if e.Test != nil && hasVariableOutsideAggregationExpr(e.Test, varName, insideAgg) {
 			return true
 		}
@@ -322,11 +323,11 @@ func hasVariableOutsideAggregationExpr(expr Expression, varName string, insideAg
 			}
 		}
 		return e.Else != nil && hasVariableOutsideAggregationExpr(e.Else, varName, insideAgg)
-	case ListComprehensionExpr:
+	case ast.ListComprehensionExpr:
 		return hasVariableOutsideAggregationExpr(e.List, varName, insideAgg) ||
 			(e.Filter != nil && hasVariableOutsideAggregationExpr(e.Filter, varName, insideAgg)) ||
 			(e.Projection != nil && hasVariableOutsideAggregationExpr(e.Projection, varName, insideAgg))
-	case ListPredicateExpr:
+	case ast.ListPredicateExpr:
 		return hasVariableOutsideAggregationExpr(e.List, varName, insideAgg) ||
 			hasVariableOutsideAggregationExpr(e.Predicate, varName, insideAgg)
 	default:
@@ -334,7 +335,7 @@ func hasVariableOutsideAggregationExpr(expr Expression, varName string, insideAg
 	}
 }
 
-func (c *Compiler) tryCompileDecomposedAggregation(funcExpr FunctionCallExpr, distinctStr string) string {
+func (c *Compiler) tryCompileDecomposedAggregation(funcExpr ast.FunctionCallExpr, distinctStr string) string {
 	if len(funcExpr.Args) != 1 {
 		return ""
 	}
@@ -411,7 +412,7 @@ func (c *Compiler) tryCompileDecomposedAggregation(funcExpr FunctionCallExpr, di
 
 	if lower == "count" {
 		countTarget := "1"
-		if _, ok := funcExpr.Args[0].(WildcardExpr); ok {
+		if _, ok := funcExpr.Args[0].(ast.WildcardExpr); ok {
 			countTarget = "*"
 		}
 		return RenderCountSubquery(&SubqueryModel{

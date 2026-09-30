@@ -1,53 +1,54 @@
-package cyphersql
+package compiler
 
 import (
 	"fmt"
+	"github.com/vmikhailov/cypher-sql-go/internal/ast"
 	"strconv"
 	"strings"
 )
 
-func (c *Compiler) visitExpression(expr Expression) (string, error) {
+func (c *Compiler) visitExpression(expr ast.Expression) (string, error) {
 	if expr == nil {
 		return "NULL", nil
 	}
 
 	switch e := expr.(type) {
-	case IdentifierExpr:
+	case ast.IdentifierExpr:
 		return c.visitIdentifier(e), nil
-	case PropertyAccessExpr:
+	case ast.PropertyAccessExpr:
 		return c.visitPropertyAccess(e), nil
-	case LiteralExpr:
+	case ast.LiteralExpr:
 		return c.visitLiteral(e), nil
-	case ParameterExpr:
+	case ast.ParameterExpr:
 		return "@" + e.Name, nil
-	case BinaryExpr:
+	case ast.BinaryExpr:
 		return c.visitBinary(e)
-	case UnaryExpr:
+	case ast.UnaryExpr:
 		return c.visitUnary(e)
-	case FunctionCallExpr:
+	case ast.FunctionCallExpr:
 		return c.visitFunctionCall(e)
-	case ListExpr:
+	case ast.ListExpr:
 		return c.visitList(e)
-	case MapExpr:
+	case ast.MapExpr:
 		return c.visitMap(e)
-	case WildcardExpr:
+	case ast.WildcardExpr:
 		return "*", nil
-	case PatternExpr:
+	case ast.PatternExpr:
 		return c.visitPatternExpr(e)
-	case PatternComprehensionExpr:
+	case ast.PatternComprehensionExpr:
 		return c.visitPatternComprehension(e)
-	case ListPredicateExpr:
+	case ast.ListPredicateExpr:
 		return c.visitListPredicate(e)
-	case ListComprehensionExpr:
+	case ast.ListComprehensionExpr:
 		return c.visitListComprehension(e)
-	case CaseExpr:
+	case ast.CaseExpr:
 		return c.visitCase(e)
 	default:
 		return "", fmt.Errorf("unsupported expression type: %T", expr)
 	}
 }
 
-func (c *Compiler) visitIdentifier(id IdentifierExpr) string {
+func (c *Compiler) visitIdentifier(id ast.IdentifierExpr) string {
 	if aliasSQL, ok := c.withAliases[id.Name]; ok {
 		return aliasSQL
 	}
@@ -68,7 +69,7 @@ func (c *Compiler) visitIdentifier(id IdentifierExpr) string {
 	return escaped
 }
 
-func (c *Compiler) visitPropertyAccess(prop PropertyAccessExpr) string {
+func (c *Compiler) visitPropertyAccess(prop ast.PropertyAccessExpr) string {
 	v := c.escapeVar(prop.Variable)
 	propName := prop.Property
 
@@ -117,29 +118,29 @@ func (c *Compiler) visitPropertyAccess(prop PropertyAccessExpr) string {
 	}
 }
 
-func (c *Compiler) visitLiteral(lit LiteralExpr) string {
+func (c *Compiler) visitLiteral(lit ast.LiteralExpr) string {
 	switch lit.Kind {
-	case LiteralString:
+	case ast.LiteralString:
 		escaped := strings.ReplaceAll(lit.StrVal, "'", "''")
 		return "'" + escaped + "'"
-	case LiteralNumber:
+	case ast.LiteralNumber:
 		if lit.IsInteger {
 			return strconv.FormatInt(int64(lit.NumVal), 10)
 		}
 		return strconv.FormatFloat(lit.NumVal, 'f', -1, 64)
-	case LiteralBool:
+	case ast.LiteralBool:
 		if lit.BoolVal {
 			return "1"
 		}
 		return "0"
-	case LiteralNull:
+	case ast.LiteralNull:
 		return "NULL"
 	default:
 		return "NULL"
 	}
 }
 
-func (c *Compiler) visitBinary(b BinaryExpr) (string, error) {
+func (c *Compiler) visitBinary(b ast.BinaryExpr) (string, error) {
 	leftSQL, err := c.visitExpression(b.Left)
 	if err != nil {
 		return "", err
@@ -150,67 +151,67 @@ func (c *Compiler) visitBinary(b BinaryExpr) (string, error) {
 	}
 
 	switch b.Op {
-	case OpEq:
+	case ast.OpEq:
 		return "(" + leftSQL + " = " + rightSQL + ")", nil
-	case OpNeq:
+	case ast.OpNeq:
 		return "(" + leftSQL + " != " + rightSQL + ")", nil
-	case OpLt:
+	case ast.OpLt:
 		return "(" + leftSQL + " < " + rightSQL + ")", nil
-	case OpLte:
+	case ast.OpLte:
 		return "(" + leftSQL + " <= " + rightSQL + ")", nil
-	case OpGt:
+	case ast.OpGt:
 		return "(" + leftSQL + " > " + rightSQL + ")", nil
-	case OpGte:
+	case ast.OpGte:
 		return "(" + leftSQL + " >= " + rightSQL + ")", nil
-	case OpAnd:
+	case ast.OpAnd:
 		return "(" + leftSQL + " AND " + rightSQL + ")", nil
-	case OpOr:
+	case ast.OpOr:
 		return "(" + leftSQL + " OR " + rightSQL + ")", nil
-	case OpAdd:
+	case ast.OpAdd:
 		return "(" + leftSQL + " + " + rightSQL + ")", nil
-	case OpSub:
+	case ast.OpSub:
 		return "(" + leftSQL + " - " + rightSQL + ")", nil
-	case OpMul:
+	case ast.OpMul:
 		return "(" + leftSQL + " * " + rightSQL + ")", nil
-	case OpDiv:
+	case ast.OpDiv:
 		return "(" + leftSQL + " / " + rightSQL + ")", nil
-	case OpMod:
+	case ast.OpMod:
 		return "(" + leftSQL + " % " + rightSQL + ")", nil
-	case OpIn:
+	case ast.OpIn:
 		return "(" + leftSQL + " IN (SELECT value FROM json_each(" + rightSQL + ")))", nil
-	case OpStarts:
+	case ast.OpStarts:
 		return "(" + leftSQL + " LIKE (" + rightSQL + " || '%'))", nil
-	case OpEnds:
+	case ast.OpEnds:
 		return "(" + leftSQL + " LIKE ('%' || " + rightSQL + "))", nil
-	case OpContains:
+	case ast.OpContains:
 		return "(" + leftSQL + " LIKE ('%' || " + rightSQL + " || '%'))", nil
-	case OpIs:
+	case ast.OpIs:
 		return "(" + leftSQL + " IS " + rightSQL + ")", nil
-	case OpIsNot:
+	case ast.OpIsNot:
 		return "(" + leftSQL + " IS NOT " + rightSQL + ")", nil
 	default:
 		return "(" + leftSQL + " " + string(b.Op) + " " + rightSQL + ")", nil
 	}
 }
 
-func (c *Compiler) visitUnary(u UnaryExpr) (string, error) {
+func (c *Compiler) visitUnary(u ast.UnaryExpr) (string, error) {
 	opSQL, err := c.visitExpression(u.Operand)
 	if err != nil {
 		return "", err
 	}
 	switch u.Op {
-	case OpNot:
+	case ast.OpNot:
 		return "(NOT (" + opSQL + "))", nil
-	case OpMinus:
+	case ast.OpMinus:
 		return "(-(" + opSQL + "))", nil
-	case OpPlus:
+	case ast.OpPlus:
 		return "(+(" + opSQL + "))", nil
 	default:
 		return string(u.Op) + " " + opSQL, nil
 	}
 }
 
-func (c *Compiler) visitFunctionCall(fn FunctionCallExpr) (string, error) {
+func (c *Compiler) visitFunctionCall(fn ast.FunctionCallExpr) (string, error) {
 	lower := strings.ToLower(fn.Name)
 	distinctStr := ""
 	if fn.IsDistinct {
@@ -224,7 +225,7 @@ func (c *Compiler) visitFunctionCall(fn FunctionCallExpr) (string, error) {
 
 	// 2. OpenCypher Relationship & Graph Introspection Functions
 	if lower == "type" && len(fn.Args) == 1 {
-		if id, ok := fn.Args[0].(IdentifierExpr); ok {
+		if id, ok := fn.Args[0].(ast.IdentifierExpr); ok {
 			if c.declaredRels[id.Name] {
 				return c.escapeVar(id.Name) + ".kind", nil
 			}
@@ -237,7 +238,7 @@ func (c *Compiler) visitFunctionCall(fn FunctionCallExpr) (string, error) {
 	}
 
 	if (lower == "startnode" || lower == "start_node") && len(fn.Args) == 1 {
-		if id, ok := fn.Args[0].(IdentifierExpr); ok {
+		if id, ok := fn.Args[0].(ast.IdentifierExpr); ok {
 			if c.declaredRels[id.Name] {
 				return c.escapeVar(id.Name) + ".from_id", nil
 			}
@@ -250,7 +251,7 @@ func (c *Compiler) visitFunctionCall(fn FunctionCallExpr) (string, error) {
 	}
 
 	if (lower == "endnode" || lower == "end_node") && len(fn.Args) == 1 {
-		if id, ok := fn.Args[0].(IdentifierExpr); ok {
+		if id, ok := fn.Args[0].(ast.IdentifierExpr); ok {
 			if c.declaredRels[id.Name] {
 				return c.escapeVar(id.Name) + ".to_id", nil
 			}
@@ -263,7 +264,7 @@ func (c *Compiler) visitFunctionCall(fn FunctionCallExpr) (string, error) {
 	}
 
 	if lower == "properties" && len(fn.Args) == 1 {
-		if id, ok := fn.Args[0].(IdentifierExpr); ok {
+		if id, ok := fn.Args[0].(ast.IdentifierExpr); ok {
 			if c.declaredNodes[id.Name] || c.declaredRels[id.Name] {
 				return "json(" + c.escapeVar(id.Name) + ".properties)", nil
 			}
@@ -276,14 +277,14 @@ func (c *Compiler) visitFunctionCall(fn FunctionCallExpr) (string, error) {
 	}
 
 	if lower == "labels" && len(fn.Args) == 1 {
-		if id, ok := fn.Args[0].(IdentifierExpr); ok {
+		if id, ok := fn.Args[0].(ast.IdentifierExpr); ok {
 			v := c.escapeVar(id.Name)
 			return "json_array(" + v + "." + c.schema.NodeKindCol + ")", nil
 		}
 	}
 
 	if lower == "exists" && len(fn.Args) == 1 {
-		if pat, ok := fn.Args[0].(PatternExpr); ok {
+		if pat, ok := fn.Args[0].(ast.PatternExpr); ok {
 			return c.visitPatternExpr(pat)
 		}
 		argSQL, _ := c.visitExpression(fn.Args[0])
@@ -292,10 +293,10 @@ func (c *Compiler) visitFunctionCall(fn FunctionCallExpr) (string, error) {
 
 	// 3. Aggregations
 	if lower == "count" && len(fn.Args) == 1 {
-		if _, ok := fn.Args[0].(WildcardExpr); ok {
+		if _, ok := fn.Args[0].(ast.WildcardExpr); ok {
 			return "COUNT(" + distinctStr + "*)", nil
 		}
-		if id, ok := fn.Args[0].(IdentifierExpr); ok {
+		if id, ok := fn.Args[0].(ast.IdentifierExpr); ok {
 			if c.declaredNodes[id.Name] {
 				return "COUNT(" + distinctStr + c.escapeVar(id.Name) + ".id)", nil
 			}
@@ -364,7 +365,7 @@ func (c *Compiler) visitFunctionCall(fn FunctionCallExpr) (string, error) {
 	return fn.Name + "(" + distinctStr + strings.Join(argStrings, ", ") + ")", nil
 }
 
-func (c *Compiler) visitList(l ListExpr) (string, error) {
+func (c *Compiler) visitList(l ast.ListExpr) (string, error) {
 	var items []string
 	for _, it := range l.Items {
 		s, err := c.visitExpression(it)
@@ -376,7 +377,7 @@ func (c *Compiler) visitList(l ListExpr) (string, error) {
 	return c.schema.Dialect.ArrayLiteral(items...), nil
 }
 
-func (c *Compiler) visitMap(m MapExpr) (string, error) {
+func (c *Compiler) visitMap(m ast.MapExpr) (string, error) {
 	var pairs []string
 	for k, v := range m.Entries {
 		vSQL, err := c.visitExpression(v)
@@ -388,7 +389,7 @@ func (c *Compiler) visitMap(m MapExpr) (string, error) {
 	return "json_object(" + strings.Join(pairs, ", ") + ")", nil
 }
 
-func (c *Compiler) visitPatternExpr(pat PatternExpr) (string, error) {
+func (c *Compiler) visitPatternExpr(pat ast.PatternExpr) (string, error) {
 	fromJoins, conditions := c.buildSubqueryPath(pat.Path, "_pe")
 	whereSQL := ""
 	if len(conditions) > 0 {
@@ -400,7 +401,7 @@ func (c *Compiler) visitPatternExpr(pat PatternExpr) (string, error) {
 	}), nil
 }
 
-func (c *Compiler) visitPatternComprehension(pc PatternComprehensionExpr) (string, error) {
+func (c *Compiler) visitPatternComprehension(pc ast.PatternComprehensionExpr) (string, error) {
 	fromJoins, conditions := c.buildSubqueryPath(pc.Path, "_pc")
 	if pc.Filter != nil {
 		fSQL, err := c.visitExpression(pc.Filter)
@@ -423,7 +424,7 @@ func (c *Compiler) visitPatternComprehension(pc PatternComprehensionExpr) (strin
 	}), nil
 }
 
-func (c *Compiler) visitListPredicate(pred ListPredicateExpr) (string, error) {
+func (c *Compiler) visitListPredicate(pred ast.ListPredicateExpr) (string, error) {
 	listSQL, err := c.visitExpression(pred.List)
 	if err != nil {
 		return "", err
@@ -444,7 +445,7 @@ func (c *Compiler) visitListPredicate(pred ListPredicateExpr) (string, error) {
 	}), nil
 }
 
-func (c *Compiler) visitListComprehension(comp ListComprehensionExpr) (string, error) {
+func (c *Compiler) visitListComprehension(comp ast.ListComprehensionExpr) (string, error) {
 	listSQL, err := c.visitExpression(comp.List)
 	if err != nil {
 		return "", err
@@ -475,7 +476,7 @@ func (c *Compiler) visitListComprehension(comp ListComprehensionExpr) (string, e
 	}), nil
 }
 
-func (c *Compiler) visitCase(caseExpr CaseExpr) (string, error) {
+func (c *Compiler) visitCase(caseExpr ast.CaseExpr) (string, error) {
 	var sb strings.Builder
 	sb.WriteString("CASE")
 	if caseExpr.Test != nil {
@@ -506,7 +507,7 @@ func (c *Compiler) visitCase(caseExpr CaseExpr) (string, error) {
 	return sb.String(), nil
 }
 
-func (c *Compiler) buildSubqueryPath(path PathPattern, prefix string) (string, []string) {
+func (c *Compiler) buildSubqueryPath(path ast.PathPattern, prefix string) (string, []string) {
 	var conditions []string
 	var fromJoins strings.Builder
 
@@ -555,17 +556,17 @@ func (c *Compiler) buildSubqueryPath(path PathPattern, prefix string) (string, [
 		targetIDSrc := actualTargetVar + "." + c.schema.NodeIDCol
 
 		switch elem.Relationship.Direction {
-		case DirectionOutgoing:
+		case ast.DirectionOutgoing:
 			conditions = append(conditions,
 				relVar+"."+c.schema.EdgeFromCol+" = "+prevIDSrc)
 			conditions = append(conditions,
 				targetIDSrc+" = "+relVar+"."+c.schema.EdgeToCol)
-		case DirectionIncoming:
+		case ast.DirectionIncoming:
 			conditions = append(conditions,
 				relVar+"."+c.schema.EdgeToCol+" = "+prevIDSrc)
 			conditions = append(conditions,
 				targetIDSrc+" = "+relVar+"."+c.schema.EdgeFromCol)
-		case DirectionUndirected:
+		case ast.DirectionUndirected:
 			conditions = append(conditions,
 				"("+relVar+"."+c.schema.EdgeFromCol+" = "+prevIDSrc+" OR "+
 					relVar+"."+c.schema.EdgeToCol+" = "+prevIDSrc+")")
@@ -588,12 +589,12 @@ func (c *Compiler) buildSubqueryPath(path PathPattern, prefix string) (string, [
 	return fromJoins.String(), conditions
 }
 
-func (c *Compiler) hasAggregation(expr Expression) bool {
+func (c *Compiler) hasAggregation(expr ast.Expression) bool {
 	if expr == nil {
 		return false
 	}
 	switch e := expr.(type) {
-	case FunctionCallExpr:
+	case ast.FunctionCallExpr:
 		lower := strings.ToLower(e.Name)
 		if lower == "count" || lower == "collect" || lower == "sum" || lower == "avg" || lower == "min" || lower == "max" {
 			return true
@@ -604,40 +605,40 @@ func (c *Compiler) hasAggregation(expr Expression) bool {
 			}
 		}
 		return false
-	case BinaryExpr:
+	case ast.BinaryExpr:
 		return c.hasAggregation(e.Left) || c.hasAggregation(e.Right)
-	case UnaryExpr:
+	case ast.UnaryExpr:
 		return c.hasAggregation(e.Operand)
 	default:
 		return false
 	}
 }
 
-func (c *Compiler) getReferencedIdentifiers(expr Expression) map[string]bool {
+func (c *Compiler) getReferencedIdentifiers(expr ast.Expression) map[string]bool {
 	set := make(map[string]bool)
 	c.collectIdentifiers(expr, set)
 	return set
 }
 
-func (c *Compiler) collectIdentifiers(expr Expression, set map[string]bool) {
+func (c *Compiler) collectIdentifiers(expr ast.Expression, set map[string]bool) {
 	if expr == nil {
 		return
 	}
 	switch e := expr.(type) {
-	case IdentifierExpr:
+	case ast.IdentifierExpr:
 		set[e.Name] = true
-	case PropertyAccessExpr:
+	case ast.PropertyAccessExpr:
 		set[e.Variable] = true
-	case BinaryExpr:
+	case ast.BinaryExpr:
 		c.collectIdentifiers(e.Left, set)
 		c.collectIdentifiers(e.Right, set)
-	case UnaryExpr:
+	case ast.UnaryExpr:
 		c.collectIdentifiers(e.Operand, set)
-	case FunctionCallExpr:
+	case ast.FunctionCallExpr:
 		for _, a := range e.Args {
 			c.collectIdentifiers(a, set)
 		}
-	case ListExpr:
+	case ast.ListExpr:
 		for _, a := range e.Items {
 			c.collectIdentifiers(a, set)
 		}

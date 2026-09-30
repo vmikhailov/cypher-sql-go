@@ -1,4 +1,4 @@
-package cyphersql
+package parser
 
 import (
 	"fmt"

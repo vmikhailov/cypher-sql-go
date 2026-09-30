@@ -1,4 +1,4 @@
-package cyphersql
+package ast
 
 // Direction represents edge traversal direction.
 type Direction int

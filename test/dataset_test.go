@@ -1,4 +1,4 @@
-package cyphersql_test
+package test
 
 import (
 	"database/sql"

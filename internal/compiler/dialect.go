@@ -1,4 +1,4 @@
-package cyphersql
+package compiler
 
 import (
 	"strings"

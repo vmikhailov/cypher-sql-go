@@ -1,93 +1,55 @@
-// Package cyphersql provides an embedded OpenCypher to SQLite SQL compiler.
+// Package cyphersql provides an embedded read-only OpenCypher to SQL compiler.
 // It transpiles graph pattern matching, path traversals, quantifiers, and aggregations
-// into fast, deterministic SQLite queries using relational indexes and JSON functions.
+// into fast, deterministic SQLite and ClickHouse queries using relational indexes and JSON functions.
 package cyphersql
 
 import (
-	"database/sql"
-	"strings"
+	"github.com/vmikhailov/cypher-sql-go/internal/compiler"
+	"github.com/vmikhailov/cypher-sql-go/internal/parser"
 )
 
 // Version of the cyphersql library.
 const Version = "1.0.0"
 
-// SchemaConfig defines physical table and column mappings for Cypher to SQL compilation.
-type SchemaConfig struct {
-	// Dialect is the database dialect for SQL generation (default: SQLiteDialect()).
-	Dialect Dialect
-	// NodesTable is the table name for vertices (default: "nodes").
-	NodesTable string
-	// EdgesTable is the table name for relationships (default: "edges").
-	EdgesTable string
-	// NodeIDCol is the primary key column for nodes (default: "id").
-	NodeIDCol string
-	// NodeKindCol is the label/type column for nodes (default: "kind").
-	NodeKindCol string
-	// NodePropsCol is the JSON properties column for nodes (default: "properties").
-	NodePropsCol string
-	// EdgeFromCol is the source vertex ID column for edges (default: "from_id").
-	EdgeFromCol string
-	// EdgeToCol is the target vertex ID column for edges (default: "to_id").
-	EdgeToCol string
-	// EdgeKindCol is the relationship type column for edges (default: "kind").
-	EdgeKindCol string
-	// EdgePropsCol is the JSON properties column for edges (default: "properties").
-	EdgePropsCol string
-	// LabelResolver provides an optional hook to override SQL predicates for node labels.
-	// Return (predicateSql, true) to use custom SQL, or (_, false) for standard kind equality.
-	LabelResolver func(nodeVar, label string) (string, bool)
+// Re-export core types for public API backwards compatibility and clean usage.
+type (
+	// Dialect abstracts database-specific SQL dialect rendering.
+	Dialect = compiler.Dialect
+
+	// SchemaConfig defines physical table and column mappings for Cypher to SQL compilation.
+	SchemaConfig = compiler.SchemaConfig
+
+	// CompiledQuery contains the generated SQL statement and associated parameters.
+	CompiledQuery = compiler.CompiledQuery
+
+	// SubqueryModel represents an isolated traversal subquery for decomposition.
+	SubqueryModel = compiler.SubqueryModel
+
+	// QuantifierModel represents an array quantifier (any/all/none/single).
+	QuantifierModel = compiler.QuantifierModel
+
+	// ListCompModel represents a list comprehension expression.
+	ListCompModel = compiler.ListCompModel
+)
+
+// SQLiteDialect returns the standard SQLite dialect implementation.
+func SQLiteDialect() Dialect {
+	return compiler.SQLiteDialect()
+}
+
+// ClickHouseDialect returns the ClickHouse dialect implementation.
+func ClickHouseDialect() Dialect {
+	return compiler.ClickHouseDialect()
 }
 
 // DefaultSchemaConfig returns the standard Universal Property Graph schema configuration for SQLite.
 func DefaultSchemaConfig() SchemaConfig {
-	return SchemaConfig{
-		Dialect:      SQLiteDialect(),
-		NodesTable:   "nodes",
-		EdgesTable:   "edges",
-		NodeIDCol:    "id",
-		NodeKindCol:  "kind",
-		NodePropsCol: "properties",
-		EdgeFromCol:  "from_id",
-		EdgeToCol:    "to_id",
-		EdgeKindCol:  "kind",
-		EdgePropsCol: "properties",
-	}
+	return compiler.DefaultSchemaConfig()
 }
 
 // ClickHouseSchemaConfig returns a standard SchemaConfig tuned for ClickHouse.
 func ClickHouseSchemaConfig() SchemaConfig {
-	return SchemaConfig{
-		Dialect:      ClickHouseDialect(),
-		NodesTable:   "nodes",
-		EdgesTable:   "edges",
-		NodeIDCol:    "id",
-		NodeKindCol:  "kind",
-		NodePropsCol: "properties",
-		EdgeFromCol:  "from_id",
-		EdgeToCol:    "to_id",
-		EdgeKindCol:  "kind",
-		EdgePropsCol: "properties",
-	}
-}
-
-// CompiledQuery contains the generated SQL statement and associated parameters.
-type CompiledQuery struct {
-	// SQL is the generated SQLite-compatible SQL query.
-	SQL string
-
-	// Params contains any named parameters defined in the query or passed by the caller.
-	Params map[string]any
-}
-
-// NamedArgs converts query parameters to a slice of sql.NamedArg
-// suitable for passing directly to db.QueryContext or db.ExecContext.
-func (q *CompiledQuery) NamedArgs() []any {
-	var args []any
-	for k, v := range q.Params {
-		name := strings.TrimPrefix(k, "@")
-		args = append(args, sql.Named(name, v))
-	}
-	return args
+	return compiler.ClickHouseSchemaConfig()
 }
 
 // Compile compiles a Cypher query string into SQLite SQL using the default schema.
@@ -107,12 +69,12 @@ func CompileWithSchema(cypher string, cfg SchemaConfig) (*CompiledQuery, error) 
 
 // CompileWithOptions compiles a Cypher query string with custom parameters and SchemaConfig.
 func CompileWithOptions(cypher string, params map[string]any, cfg SchemaConfig) (*CompiledQuery, error) {
-	parser := NewParser(cypher)
-	query, err := parser.Parse()
+	p := parser.NewParser(cypher)
+	query, err := p.Parse()
 	if err != nil {
 		return nil, err
 	}
 
-	compiler := NewCompilerWithOptions(query, params, cfg)
-	return compiler.Compile()
+	c := compiler.NewCompilerWithOptions(query, params, cfg)
+	return c.Compile()
 }
