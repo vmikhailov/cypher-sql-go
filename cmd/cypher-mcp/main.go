@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -26,7 +27,7 @@ type JSONRPCRequest struct {
 
 type JSONRPCResponse struct {
 	JSONRPC string `json:"jsonrpc"`
-	ID      any    `json:"id,omitempty"`
+	ID      any    `json:"id"`
 	Result  any    `json:"result,omitempty"`
 	Error   any    `json:"error,omitempty"`
 }
@@ -223,11 +224,11 @@ func handleGraphQuery(db *sql.DB, cypherQuery string) (string, error) {
 	execDuration := time.Since(qStart)
 
 	payload := map[string]any{
-		"results":          results,
-		"count":            len(results),
-		"compiled_sql":     compiled.SQL,
-		"compile_time_us":  compileDuration.Microseconds(),
-		"execute_time_us":  execDuration.Microseconds(),
+		"results":         results,
+		"count":           len(results),
+		"compiled_sql":    compiled.SQL,
+		"compile_time_us": compileDuration.Microseconds(),
+		"execute_time_us": execDuration.Microseconds(),
 	}
 
 	b, _ := json.MarshalIndent(payload, "", "  ")
@@ -307,7 +308,6 @@ func handleSchema(db *sql.DB) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("query node kinds: %w", err)
 	}
-	defer nodeRows.Close()
 
 	var nodeCounts []KindCount
 	totalNodes := 0
@@ -318,12 +318,12 @@ func handleSchema(db *sql.DB) (string, error) {
 			totalNodes += kc.Count
 		}
 	}
+	nodeRows.Close()
 
 	edgeRows, err := db.Query("SELECT kind, count(*) FROM edges GROUP BY kind ORDER BY count(*) DESC")
 	if err != nil {
 		return "", fmt.Errorf("query edge kinds: %w", err)
 	}
-	defer edgeRows.Close()
 
 	var edgeCounts []KindCount
 	totalEdges := 0
@@ -334,6 +334,7 @@ func handleSchema(db *sql.DB) (string, error) {
 			totalEdges += kc.Count
 		}
 	}
+	edgeRows.Close()
 
 	summary := map[string]any{
 		"total_nodes": totalNodes,
@@ -348,10 +349,29 @@ func handleSchema(db *sql.DB) (string, error) {
 
 func main() {
 	dbPath := flag.String("db", "knowledge_graph.db", "Path to SQLite database file")
+	logPath := flag.String("log", "", "Path to debug log file")
 	flag.Parse()
+
+	var logger *log.Logger
+	if *logPath != "" {
+		_ = os.MkdirAll(filepath.Dir(*logPath), 0755)
+		if f, err := os.OpenFile(*logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644); err == nil {
+			defer f.Close()
+			logger = log.New(f, "[mcp] ", log.LstdFlags|log.Lmicroseconds)
+		}
+	}
+
+	logMsg := func(format string, v ...any) {
+		if logger != nil {
+			logger.Printf(format, v...)
+		}
+	}
+
+	logMsg("Starting cypher-mcp with db=%s", *dbPath)
 
 	db, err := initDatabase(*dbPath)
 	if err != nil {
+		logMsg("Database init failed: %v", err)
 		log.Fatalf("database init failed: %v", err)
 	}
 	defer db.Close()
@@ -362,8 +382,10 @@ func main() {
 	sendResponse := func(resp JSONRPCResponse) {
 		b, err := json.Marshal(resp)
 		if err != nil {
+			logMsg("Failed to marshal response: %v", err)
 			return
 		}
+		logMsg("OUT: %s", string(b))
 		writer.Write(b)
 		writer.WriteString("\n")
 		writer.Flush()
@@ -373,8 +395,10 @@ func main() {
 		line, err := reader.ReadBytes('\n')
 		if err != nil {
 			if err == io.EOF {
+				logMsg("Stdin EOF received, shutting down")
 				break
 			}
+			logMsg("Error reading stdin: %v", err)
 			continue
 		}
 
@@ -383,8 +407,11 @@ func main() {
 			continue
 		}
 
+		logMsg("IN: %s", trimmed)
+
 		var req JSONRPCRequest
 		if err := json.Unmarshal([]byte(trimmed), &req); err != nil {
+			logMsg("JSON unmarshal error: %v", err)
 			continue
 		}
 
@@ -396,7 +423,9 @@ func main() {
 				Result: map[string]any{
 					"protocolVersion": "2024-11-05",
 					"capabilities": map[string]any{
-						"tools": map[string]any{},
+						"tools":     map[string]any{},
+						"resources": map[string]any{},
+						"prompts":   map[string]any{},
 					},
 					"serverInfo": map[string]any{
 						"name":    "cypher-graph-mcp",
@@ -406,9 +435,34 @@ func main() {
 			})
 
 		case "notifications/initialized":
-			// No reply needed for JSON-RPC notifications
+			logMsg("Client initialized notification received")
 
 		case "ping":
+			sendResponse(JSONRPCResponse{
+				JSONRPC: "2.0",
+				ID:      req.ID,
+				Result:  map[string]any{},
+			})
+
+		case "resources/list":
+			sendResponse(JSONRPCResponse{
+				JSONRPC: "2.0",
+				ID:      req.ID,
+				Result: map[string]any{
+					"resources": []any{},
+				},
+			})
+
+		case "prompts/list":
+			sendResponse(JSONRPCResponse{
+				JSONRPC: "2.0",
+				ID:      req.ID,
+				Result: map[string]any{
+					"prompts": []any{},
+				},
+			})
+
+		case "logging/setLevel":
 			sendResponse(JSONRPCResponse{
 				JSONRPC: "2.0",
 				ID:      req.ID,
@@ -489,6 +543,19 @@ func main() {
 						Content: []ToolContent{
 							{Type: "text", Text: outText},
 						},
+					},
+				})
+			}
+
+		default:
+			logMsg("Unhandled method: %s", req.Method)
+			if req.ID != nil {
+				sendResponse(JSONRPCResponse{
+					JSONRPC: "2.0",
+					ID:      req.ID,
+					Error: map[string]any{
+						"code":    -32601,
+						"message": fmt.Sprintf("Method not found: %s", req.Method),
 					},
 				})
 			}
