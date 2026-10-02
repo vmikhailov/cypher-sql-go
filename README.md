@@ -1,4 +1,4 @@
-# CypherSQL for Go ⚡ (`cypher-sql-go`)
+# CypherSQL for Go (`cypher-sql-go`)
 
 [![CI](https://github.com/vmikhailov/cypher-sql-go/actions/workflows/ci.yml/badge.svg)](https://github.com/vmikhailov/cypher-sql-go/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/vmikhailov/cypher-sql-go.svg)](https://pkg.go.dev/github.com/vmikhailov/cypher-sql-go)
@@ -13,7 +13,7 @@ read-only safety for AI agents, in-process execution.**
 
 ---
 
-## 🌟 Why CypherSQL?
+## Why CypherSQL?
 
 Following the acquisition and deprecation of embedded graph engines like KùzuDB, building lightweight AI agents,
 personal knowledge graphs, or local code analyzers required either heavy client-server graph databases (Neo4j,
@@ -28,7 +28,7 @@ Memgraph) or hand-writing complex 200-line SQL recursive CTEs.
 
 ---
 
-## 🗄️ Database Schema & Storage Contract
+## Database Schema & Storage Contract
 
 `cyphersql` maps declarative graph constructs directly to a **Universal Relational Property Graph** schema powered
 by SQLite's native JSON1 engine.
@@ -87,7 +87,7 @@ CREATE INDEX idx_nodes_kind ON nodes(kind);
 
 ---
 
-## ⚙️ Custom Schema & Polymorphic Label Resolvers
+## Custom Schema & Polymorphic Label Resolvers
 
 `cyphersql` works out-of-the-box with the standard `nodes` and `edges` tables, but is fully decoupled from table
 names, column names, and domain semantics via `SchemaConfig`.
@@ -227,7 +227,7 @@ func main() {
 
 ---
 
-## ⚡ Core Capabilities
+## Core Capabilities
 
 * **Graph Pattern Matching:**
   * Outgoing: `(a)-[:CALLS]->(b)`
@@ -251,7 +251,7 @@ func main() {
 
 ---
 
-## 🧪 Performance & Benchmarks
+## Performance & Benchmarks
 
 ```bash
 go test -bench=. -benchmem
@@ -264,62 +264,7 @@ BenchmarkRealDataset_CompileAndExecute-12    	    2679	    417098 ns/op	   11038
 
 ---
 
-## 🤖 Model Context Protocol (MCP) Server
-
-> 🚀 **Standalone MCP Repository:** For dedicated prebuilt binaries, standalone agent setups, and CI releases, see **[`vmikhailov/cypher-mcp`](https://github.com/vmikhailov/cypher-mcp)**.
-
-`cypher-sql-go` includes a standalone, production-ready **Model Context Protocol (MCP)** server for AI agents
-(Claude Desktop, Antigravity, Cursor, Hermes Agent). It enables local AI models to query and curate embedded
-SQLite knowledge graphs with sub-millisecond latency.
-
-### Highlights
-* **Zero CGO:** Built on `modernc.org/sqlite`, fully cross-compiled into a single ~15MB static binary.
-* **Deterministic Cypher:** Agents express complex multi-hop graph questions in natural Cypher without SQL hallucinations.
-* **Tools Included:**
-  * `graph_query`: Execute read-only Cypher queries and return structured results with compilation metrics.
-  * `graph_schema`: Inspect graph topology (counts of nodes and edges by kind, top property keys).
-  * `graph_set_node`: Create or update graph nodes with dynamic JSON attributes.
-  * `graph_set_edge`: Create or update directed relationships between nodes.
-  * `graph_delete_node`: Delete a node and cascade-clean its connected relationships.
-
-### Quick Start
-
-```bash
-# Build the MCP server
-go build -o bin/cypher-mcp ./cmd/cypher-mcp
-
-# Run with your SQLite knowledge graph
-./bin/cypher-mcp --db /path/to/knowledge_graph.db
-```
-
-### Agent Configuration Examples
-
-#### Claude Desktop (`claude_desktop_config.json`)
-```json
-{
-  "mcpServers": {
-    "knowledge_graph": {
-      "command": "/usr/local/bin/cypher-mcp",
-      "args": ["--db", "/Users/user/.local/share/knowledge_graph.db"]
-    }
-  }
-}
-```
-
-#### Antigravity / Cursor / VS Code (`mcp_config.json`)
-```json
-{
-  "mcpServers": {
-    "cypher_graph": {
-      "command": "C:/Work/Personal/cypher-sql-go/bin/cypher-mcp.exe",
-      "args": ["--db", "C:/Users/viach/AppData/Local/hermes/knowledge_graph.db"]
-    }
-  }
-}
-```
-
----
-
-## 📄 License
+## License
 
 MIT License. Copyright (c) 2026 Viacheslav Mikhailov.
+

@@ -14,9 +14,6 @@ fmt:
 vet:
 	go vet ./...
 
-build-mcp:
-	go build -ldflags="-s -w" -o bin/cypher-mcp ./cmd/cypher-mcp
-
 check: fmt vet test
 
 example-sqlite:
