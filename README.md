@@ -266,6 +266,8 @@ BenchmarkRealDataset_CompileAndExecute-12    	    2679	    417098 ns/op	   11038
 
 ## 🤖 Model Context Protocol (MCP) Server
 
+> 🚀 **Standalone MCP Repository:** For dedicated prebuilt binaries, standalone agent setups, and CI releases, see **[`vmikhailov/cypher-mcp`](https://github.com/vmikhailov/cypher-mcp)**.
+
 `cypher-sql-go` includes a standalone, production-ready **Model Context Protocol (MCP)** server for AI agents
 (Claude Desktop, Antigravity, Cursor, Hermes Agent). It enables local AI models to query and curate embedded
 SQLite knowledge graphs with sub-millisecond latency.
