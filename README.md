@@ -2,7 +2,6 @@
 
 [![CI](https://github.com/vmikhailov/cypher-sql-go/actions/workflows/ci.yml/badge.svg)](https://github.com/vmikhailov/cypher-sql-go/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/vmikhailov/cypher-sql-go.svg)](https://pkg.go.dev/github.com/vmikhailov/cypher-sql-go)
-[![Go Report Card](https://goreportcard.com/badge/github.com/vmikhailov/cypher-sql-go)](https://goreportcard.com/report/github.com/vmikhailov/cypher-sql-go)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 An **embedded read-only OpenCypher to SQL compiler & query transpiler** written in pure Go.
