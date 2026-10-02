@@ -26,6 +26,10 @@ Memgraph) or hand-writing complex 200-line SQL recursive CTEs.
   destructive queries (`DROP`, `DELETE`, `CREATE`).
 * **CGO-Free:** Fully compatible with pure-Go SQLite drivers (`modernc.org/sqlite`) for seamless cross-compilation.
 
+### Scale: From Embedded Edge to Entire Organizations
+* **Local & Edge AI Agents:** Pair with embedded SQLite via [`cypher-mcp`](https://github.com/vmikhailov/cypher-mcp) (Zero-CGO, single static binary, sub-millisecond latency).
+* **Enterprise & Org-Scale Graphs:** Connect `cypher-sql-go` directly to your **ClickHouse** cluster and load your entire organization (billions of nodes/edges across microservices, ASTs, IAM trees, git commit graphs) with vectorized OLAP execution.
+
 ---
 
 ## Database Schema & Storage Contract
