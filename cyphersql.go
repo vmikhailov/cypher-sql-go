@@ -78,3 +78,13 @@ func CompileWithOptions(cypher string, params map[string]any, cfg SchemaConfig) 
 	c := compiler.NewCompilerWithOptions(query, params, cfg)
 	return c.Compile()
 }
+
+// ValidateIdentifier returns an error if the identifier contains invalid or potentially unsafe characters.
+func ValidateIdentifier(kind, name string) error {
+	return compiler.ValidateIdentifier(kind, name)
+}
+
+// IsSafeIdentifier checks if an identifier contains only valid alphanumeric and underscore chars.
+func IsSafeIdentifier(s string) bool {
+	return compiler.IsSafeIdentifier(s)
+}

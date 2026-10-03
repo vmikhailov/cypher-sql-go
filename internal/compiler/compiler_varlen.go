@@ -79,14 +79,7 @@ func (c *Compiler) processVarLenStep(
 	} else if len(targetFilters) > 0 {
 		anchorEnd = "target"
 	} else {
-		// Neither endpoint has filters: require explicit LIMIT and small hop count
-		if c.query.Limit == nil {
-			return fmt.Errorf("variable-length path without anchored endpoints requires a filter on at least one endpoint or an explicit LIMIT to prevent combinatorial explosion")
-		}
-		if maxHops > 3 {
-			return fmt.Errorf("variable-length path without anchored endpoints requires explicit small hop limit (<= 3)")
-		}
-		anchorEnd = "none"
+		return fmt.Errorf("variable-length traversal requires an anchored start or target node (label or property filter) to prevent full-graph traversal")
 	}
 
 	edgeKey := "char(31) || e." + c.schema.EdgeFromCol + " || char(30) || e." + c.schema.EdgeToCol + " || char(30) || e." + c.schema.EdgeKindCol + " || char(31)"
