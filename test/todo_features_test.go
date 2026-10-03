@@ -366,3 +366,18 @@ func TestTODO13_DialectInArray(t *testing.T) {
 		t.Fatalf("expected ClickHouse SQL to use has(...), got: %s", chComp.SQL)
 	}
 }
+
+func TestReturnPropertyAccess_DefaultAlias(t *testing.T) {
+	cypher := "MATCH (p:Person) RETURN p.name, p.id"
+	compiled, err := cyphersql.Compile(cypher)
+	if err != nil {
+		t.Fatalf("failed to compile: %v", err)
+	}
+	if !strings.Contains(compiled.SQL, `AS "p.name"`) {
+		t.Fatalf("expected column alias AS \"p.name\", got SQL: %s", compiled.SQL)
+	}
+	if !strings.Contains(compiled.SQL, `AS "p.id"`) {
+		t.Fatalf("expected column alias AS \"p.id\", got SQL: %s", compiled.SQL)
+	}
+}
+

@@ -532,8 +532,15 @@ func (c *Compiler) buildSelectColumns(ret ast.ReturnClause) ([]string, error) {
 		}
 		alias := item.Alias
 		if alias == "" {
-			if id, ok := item.Expression.(ast.IdentifierExpr); ok {
-				alias = id.Name
+			switch e := item.Expression.(type) {
+			case ast.IdentifierExpr:
+				alias = e.Name
+			case ast.PropertyAccessExpr:
+				if e.Variable != "" {
+					alias = e.Variable + "." + e.Property
+				} else {
+					alias = e.Property
+				}
 			}
 		}
 		if alias != "" {
