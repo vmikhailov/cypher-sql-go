@@ -31,6 +31,7 @@ type Compiler struct {
 	aggregatedAliases  map[string]bool
 	decomposedBranches map[string]*decomposedBranch
 	ctes               []string
+	varAliases         map[string]string
 	fromTable          string
 	fromAlias          string
 	joins              []JoinModel
@@ -87,10 +88,16 @@ func NewCompilerWithOptions(query *ast.Query, params map[string]any, cfg SchemaC
 		unwindVariables:    make(map[string]bool),
 		aggregatedAliases:  make(map[string]bool),
 		decomposedBranches: make(map[string]*decomposedBranch),
+		varAliases:         make(map[string]string),
 	}
 }
 
 func (c *Compiler) escapeVar(name string) string {
+	if c.varAliases != nil {
+		if alias, ok := c.varAliases[name]; ok {
+			name = alias
+		}
+	}
 	if reservedKeywords[strings.ToLower(name)] {
 		return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 	}
@@ -256,6 +263,7 @@ func (c *Compiler) processPathChain(
 	mainWhereConditions *[]string,
 	optionalWhereExtra []string,
 ) error {
+	prevNode := path.Head
 	prevVar := headVar
 
 	for _, elem := range path.Chain {
@@ -276,6 +284,15 @@ func (c *Compiler) processPathChain(
 		c.declaredRels[relVar] = true
 		targetAlreadyDeclared := c.declaredNodes[targetVar]
 		c.declaredNodes[targetVar] = true
+
+		if rel.MinHops != nil || rel.MaxHops != nil {
+			if err := c.processVarLenStep(prevNode, prevVar, rel, targetNode, targetVar, relVar, targetAlreadyDeclared, joinKeyword, optionalWhereExtra); err != nil {
+				return err
+			}
+			prevNode = targetNode
+			prevVar = targetVar
+			continue
+		}
 
 		escRel := c.escapeVar(relVar)
 		escTarget := c.escapeVar(targetVar)
@@ -382,6 +399,7 @@ func (c *Compiler) processPathChain(
 			})
 		}
 
+		prevNode = targetNode
 		prevVar = targetVar
 	}
 	return nil

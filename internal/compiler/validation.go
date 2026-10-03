@@ -155,7 +155,18 @@ func (c *Compiler) validateNodePattern(node ast.NodePattern) error {
 
 func (c *Compiler) validateRelPattern(rel ast.RelationshipPattern) error {
 	if rel.MinHops != nil || rel.MaxHops != nil {
-		return fmt.Errorf("variable-length relationships are not yet supported")
+		if c.schema.Dialect.Name() == "clickhouse" {
+			return fmt.Errorf("variable-length relationships are not supported for ClickHouse dialect")
+		}
+		if rel.Variable != "" {
+			return fmt.Errorf("binding relationship variable %q in variable-length relationships is not yet supported", rel.Variable)
+		}
+		if rel.Direction == ast.DirectionUndirected {
+			return fmt.Errorf("undirected variable-length relationships are not yet supported")
+		}
+		if rel.MinHops != nil && *rel.MinHops < 1 {
+			return fmt.Errorf("0-hop variable-length relationships (*0..) are not yet supported")
+		}
 	}
 	if rel.Variable != "" {
 		if err := ValidateIdentifier("variable", rel.Variable); err != nil {

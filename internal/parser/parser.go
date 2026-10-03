@@ -431,26 +431,57 @@ func (p *Parser) parseRelationshipDetails(rel *ast.RelationshipPattern) error {
 		}
 	}
 
-	// VarLen: *1..3 or *..3 or *1.. or *
+	// VarLen: *1..3 or *..3 or *1.. or * or *2
 	if p.current.Type == TokenAsterisk {
 		p.nextToken()
 		min := 1
-		max := 1
+		max := 10 // default max hops
+		hasMin := false
+		hasDots := false
+		hasMax := false
+
 		if p.current.Type == TokenNumber {
-			n, _ := strconv.Atoi(p.current.Value)
+			n, err := strconv.Atoi(p.current.Value)
+			if err != nil {
+				return p.errorf("invalid number %q for hops: %v", p.current.Value, err)
+			}
+			if n < 0 {
+				return p.errorf("hops cannot be negative: %d", n)
+			}
 			min = n
 			max = n
+			hasMin = true
 			p.nextToken()
 		}
+
 		if p.current.Type == TokenIdent && p.current.Value == ".." {
+			hasDots = true
 			p.nextToken()
-			max = 10 // default max hops
 			if p.current.Type == TokenNumber {
-				n, _ := strconv.Atoi(p.current.Value)
+				n, err := strconv.Atoi(p.current.Value)
+				if err != nil {
+					return p.errorf("invalid number %q for max hops: %v", p.current.Value, err)
+				}
+				if n < 0 {
+					return p.errorf("max hops cannot be negative: %d", n)
+				}
 				max = n
+				hasMax = true
 				p.nextToken()
+			} else {
+				// e.g. *1.. or *..
+				max = 10
 			}
+		} else if !hasMin {
+			// [*] without numbers and without dots -> equivalent to *1..10
+			min = 1
+			max = 10
 		}
+
+		if hasDots && hasMax && max < min {
+			return p.errorf("max hops (%d) cannot be less than min hops (%d)", max, min)
+		}
+
 		rel.MinHops = &min
 		rel.MaxHops = &max
 	}
