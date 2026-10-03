@@ -20,6 +20,7 @@ const (
 	TokenWith
 	TokenReturn
 	TokenOrder
+	TokenGroup
 	TokenBy
 	TokenSkip
 	TokenLimit
@@ -86,6 +87,7 @@ var tokenNames = map[TokenType]string{
 	TokenWith:     "WITH",
 	TokenReturn:   "RETURN",
 	TokenOrder:    "ORDER",
+	TokenGroup:    "GROUP",
 	TokenBy:       "BY",
 	TokenSkip:     "SKIP",
 	TokenLimit:    "LIMIT",

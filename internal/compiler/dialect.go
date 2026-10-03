@@ -35,6 +35,9 @@ type Dialect interface {
 
 	// RenderListComprehension renders a list comprehension expression.
 	RenderListComprehension(m *ListCompModel) string
+
+	// InArray returns an expression testing if val is an element of array/list expr.
+	InArray(val, list string) string
 }
 
 // --- SQLite Dialect ---
@@ -79,6 +82,10 @@ func (d *sqliteDialect) ArrayLength(expr string) string {
 
 func (d *sqliteDialect) ParamPlaceholder(name string, index int) string {
 	return "@" + name
+}
+
+func (d *sqliteDialect) InArray(val, list string) string {
+	return val + " IN (SELECT value FROM json_each(" + list + "))"
 }
 
 func (d *sqliteDialect) RenderCollectSubquery(m *SubqueryModel) string {
@@ -137,6 +144,14 @@ func (d *clickhouseDialect) ArrayLength(expr string) string {
 
 func (d *clickhouseDialect) ParamPlaceholder(name string, index int) string {
 	return "{" + name + ":String}"
+}
+
+func (d *clickhouseDialect) InArray(val, list string) string {
+	trimmed := strings.TrimSpace(list)
+	if strings.HasPrefix(trimmed, "[") {
+		return "has(" + trimmed + ", " + val + ")"
+	}
+	return "has(JSONExtract(" + list + ", 'Array(String)'), toString(" + val + "))"
 }
 
 func (d *clickhouseDialect) RenderCollectSubquery(m *SubqueryModel) string {

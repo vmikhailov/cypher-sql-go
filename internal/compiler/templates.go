@@ -74,7 +74,9 @@ var (
 {{ join .CTEs ",\n" }}
 {{ end -}}
 SELECT {{ if .IsDistinct }}DISTINCT {{ end }}{{ join .Columns ", " }}
+{{- if .FromTable }}
 FROM {{ .FromTable }} {{ .FromAlias }}
+{{- end }}
 {{- range .Joins }}
 {{ .Type }} {{ .Table }} {{ .Alias }} ON {{ .On }}
 {{- end }}

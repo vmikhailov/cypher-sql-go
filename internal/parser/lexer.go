@@ -13,6 +13,7 @@ var keywords = map[string]TokenType{
 	"WITH":     TokenWith,
 	"RETURN":   TokenReturn,
 	"ORDER":    TokenOrder,
+	"GROUP":    TokenGroup,
 	"BY":       TokenBy,
 	"SKIP":     TokenSkip,
 	"OFFSET":   TokenSkip,
@@ -201,6 +202,9 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TokenError, Value: err.Error(), Line: line, Column: col}
 		}
 		return Token{Type: TokenIdent, Value: ident, Line: line, Column: col}
+	case ';':
+		l.readChar()
+		return Token{Type: TokenError, Value: "unquoted semicolons are not permitted", Line: line, Column: col}
 	case '$', '@':
 		l.readChar()
 		ident := l.readIdentifier()

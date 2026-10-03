@@ -96,6 +96,24 @@ func (p *Parser) Parse() (*ast.Query, error) {
 	}
 	q.Return = *ret
 
+	// Optional GROUP BY
+	if p.current.Type == TokenGroup {
+		p.nextToken() // skip GROUP
+		if err := p.expect(TokenBy); err != nil {
+			return nil, err
+		}
+		for {
+			if _, err := p.parseExpression(); err != nil {
+				return nil, err
+			}
+			if p.current.Type == TokenComma {
+				p.nextToken()
+			} else {
+				break
+			}
+		}
+	}
+
 	// 4. ORDER BY
 	if p.current.Type == TokenOrder {
 		p.nextToken() // skip ORDER
@@ -140,6 +158,13 @@ func (p *Parser) Parse() (*ast.Query, error) {
 			}
 			q.Limit = limitExpr
 		}
+	}
+
+	if p.current.Type != TokenEOF {
+		if p.current.Type == TokenError {
+			return nil, p.errorf("%s", p.current.Value)
+		}
+		return nil, p.errorf("unexpected trailing token %s (%q)", p.current.Type, p.current.Value)
 	}
 
 	return q, nil

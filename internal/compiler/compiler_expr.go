@@ -178,13 +178,16 @@ func (c *Compiler) visitBinary(b ast.BinaryExpr) (string, error) {
 	case ast.OpMod:
 		return "(" + leftSQL + " % " + rightSQL + ")", nil
 	case ast.OpIn:
-		return "(" + leftSQL + " IN (SELECT value FROM json_each(" + rightSQL + ")))", nil
+		return "(" + c.schema.Dialect.InArray(leftSQL, rightSQL) + ")", nil
 	case ast.OpStarts:
-		return "(" + leftSQL + " LIKE (" + rightSQL + " || '%'))", nil
+		pattern := c.compileLikePattern(b.Right, rightSQL)
+		return "(" + leftSQL + " LIKE (" + pattern + " || '%') ESCAPE '\\')", nil
 	case ast.OpEnds:
-		return "(" + leftSQL + " LIKE ('%' || " + rightSQL + "))", nil
+		pattern := c.compileLikePattern(b.Right, rightSQL)
+		return "(" + leftSQL + " LIKE ('%' || " + pattern + ") ESCAPE '\\')", nil
 	case ast.OpContains:
-		return "(" + leftSQL + " LIKE ('%' || " + rightSQL + " || '%'))", nil
+		pattern := c.compileLikePattern(b.Right, rightSQL)
+		return "(" + leftSQL + " LIKE ('%' || " + pattern + " || '%') ESCAPE '\\')", nil
 	case ast.OpIs:
 		return "(" + leftSQL + " IS " + rightSQL + ")", nil
 	case ast.OpIsNot:
@@ -192,6 +195,15 @@ func (c *Compiler) visitBinary(b ast.BinaryExpr) (string, error) {
 	default:
 		return "(" + leftSQL + " " + string(b.Op) + " " + rightSQL + ")", nil
 	}
+}
+
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+func (c *Compiler) compileLikePattern(expr ast.Expression, defaultSQL string) string {
+	if lit, ok := expr.(ast.LiteralExpr); ok && lit.Kind == ast.LiteralString {
+		return "'" + SanitizeSQLLiteral(likeEscaper.Replace(lit.StrVal)) + "'"
+	}
+	return defaultSQL
 }
 
 func (c *Compiler) visitUnary(u ast.UnaryExpr) (string, error) {
@@ -209,160 +221,6 @@ func (c *Compiler) visitUnary(u ast.UnaryExpr) (string, error) {
 	default:
 		return string(u.Op) + " " + opSQL, nil
 	}
-}
-
-func (c *Compiler) visitFunctionCall(fn ast.FunctionCallExpr) (string, error) {
-	lower := strings.ToLower(fn.Name)
-	distinctStr := ""
-	if fn.IsDistinct {
-		distinctStr = "DISTINCT "
-	}
-
-	// 1. Check decomposed optional match aggregation
-	if decomposed := c.tryCompileDecomposedAggregation(fn, distinctStr); decomposed != "" {
-		return decomposed, nil
-	}
-
-	// 2. OpenCypher Relationship & Graph Introspection Functions
-	if lower == "type" && len(fn.Args) == 1 {
-		if id, ok := fn.Args[0].(ast.IdentifierExpr); ok {
-			if c.declaredRels[id.Name] {
-				return c.escapeVar(id.Name) + ".kind", nil
-			}
-			if aliasSQL, ok := c.withAliases[id.Name]; ok {
-				return "COALESCE(json_extract(" + aliasSQL + ", '$.type'), json_extract(" + aliasSQL + ", '$.kind'))", nil
-			}
-		}
-		argSQL, _ := c.visitExpression(fn.Args[0])
-		return "json_extract(" + argSQL + ", '$.type')", nil
-	}
-
-	if (lower == "startnode" || lower == "start_node") && len(fn.Args) == 1 {
-		if id, ok := fn.Args[0].(ast.IdentifierExpr); ok {
-			if c.declaredRels[id.Name] {
-				return c.escapeVar(id.Name) + ".from_id", nil
-			}
-			if aliasSQL, ok := c.withAliases[id.Name]; ok {
-				return "COALESCE(json_extract(" + aliasSQL + ", '$.from'), json_extract(" + aliasSQL + ", '$.from_id'))", nil
-			}
-		}
-		argSQL, _ := c.visitExpression(fn.Args[0])
-		return "COALESCE(json_extract(" + argSQL + ", '$.from'), json_extract(" + argSQL + ", '$.from_id'))", nil
-	}
-
-	if (lower == "endnode" || lower == "end_node") && len(fn.Args) == 1 {
-		if id, ok := fn.Args[0].(ast.IdentifierExpr); ok {
-			if c.declaredRels[id.Name] {
-				return c.escapeVar(id.Name) + ".to_id", nil
-			}
-			if aliasSQL, ok := c.withAliases[id.Name]; ok {
-				return "COALESCE(json_extract(" + aliasSQL + ", '$.to'), json_extract(" + aliasSQL + ", '$.to_id'))", nil
-			}
-		}
-		argSQL, _ := c.visitExpression(fn.Args[0])
-		return "COALESCE(json_extract(" + argSQL + ", '$.to'), json_extract(" + argSQL + ", '$.to_id'))", nil
-	}
-
-	if lower == "properties" && len(fn.Args) == 1 {
-		if id, ok := fn.Args[0].(ast.IdentifierExpr); ok {
-			if c.declaredNodes[id.Name] || c.declaredRels[id.Name] {
-				return "json(" + c.escapeVar(id.Name) + ".properties)", nil
-			}
-			if aliasSQL, ok := c.withAliases[id.Name]; ok {
-				return "COALESCE(json_extract(" + aliasSQL + ", '$.properties'), json(" + aliasSQL + "))", nil
-			}
-		}
-		argSQL, _ := c.visitExpression(fn.Args[0])
-		return "json(" + argSQL + ")", nil
-	}
-
-	if lower == "labels" && len(fn.Args) == 1 {
-		if id, ok := fn.Args[0].(ast.IdentifierExpr); ok {
-			v := c.escapeVar(id.Name)
-			return "json_array(" + v + "." + c.schema.NodeKindCol + ")", nil
-		}
-	}
-
-	if lower == "exists" && len(fn.Args) == 1 {
-		if pat, ok := fn.Args[0].(ast.PatternExpr); ok {
-			return c.visitPatternExpr(pat)
-		}
-		argSQL, _ := c.visitExpression(fn.Args[0])
-		return "(" + argSQL + " IS NOT NULL)", nil
-	}
-
-	// 3. Aggregations
-	if lower == "count" && len(fn.Args) == 1 {
-		if _, ok := fn.Args[0].(ast.WildcardExpr); ok {
-			return "COUNT(" + distinctStr + "*)", nil
-		}
-		if id, ok := fn.Args[0].(ast.IdentifierExpr); ok {
-			if c.declaredNodes[id.Name] {
-				return "COUNT(" + distinctStr + c.escapeVar(id.Name) + ".id)", nil
-			}
-			if c.declaredRels[id.Name] {
-				return "COUNT(" + distinctStr + c.escapeVar(id.Name) + ".rowid)", nil
-			}
-		}
-		argSQL, err := c.visitExpression(fn.Args[0])
-		if err != nil {
-			return "", err
-		}
-		return "COUNT(" + distinctStr + argSQL + ")", nil
-	}
-
-	if lower == "collect" && len(fn.Args) == 1 {
-		innerSQL, err := c.visitExpression(fn.Args[0])
-		if err != nil {
-			return "", err
-		}
-		return c.schema.Dialect.ArrayAgg(innerSQL, innerSQL+" IS NOT NULL", fn.IsDistinct), nil
-	}
-
-	// 4. Scalar functions
-	if lower == "coalesce" {
-		var args []string
-		for _, arg := range fn.Args {
-			s, err := c.visitExpression(arg)
-			if err != nil {
-				return "", err
-			}
-			args = append(args, s)
-		}
-		return "COALESCE(" + strings.Join(args, ", ") + ")", nil
-	}
-
-	if lower == "tolower" && len(fn.Args) == 1 {
-		argSQL, _ := c.visitExpression(fn.Args[0])
-		return "lower(" + argSQL + ")", nil
-	}
-	if lower == "toupper" && len(fn.Args) == 1 {
-		argSQL, _ := c.visitExpression(fn.Args[0])
-		return "upper(" + argSQL + ")", nil
-	}
-	if lower == "tostring" && len(fn.Args) == 1 {
-		argSQL, _ := c.visitExpression(fn.Args[0])
-		return "CAST(" + argSQL + " AS TEXT)", nil
-	}
-	if lower == "length" && len(fn.Args) == 1 {
-		argSQL, _ := c.visitExpression(fn.Args[0])
-		return "length(" + argSQL + ")", nil
-	}
-	if lower == "size" && len(fn.Args) == 1 {
-		argSQL, _ := c.visitExpression(fn.Args[0])
-		return c.schema.Dialect.ArrayLength(argSQL), nil
-	}
-
-	// Default function call
-	var argStrings []string
-	for _, arg := range fn.Args {
-		s, err := c.visitExpression(arg)
-		if err != nil {
-			return "", err
-		}
-		argStrings = append(argStrings, s)
-	}
-	return fn.Name + "(" + distinctStr + strings.Join(argStrings, ", ") + ")", nil
 }
 
 func (c *Compiler) visitList(l ast.ListExpr) (string, error) {
@@ -384,7 +242,7 @@ func (c *Compiler) visitMap(m ast.MapExpr) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		pairs = append(pairs, "'"+k+"', "+vSQL)
+		pairs = append(pairs, "'"+SanitizeSQLLiteral(k)+"', "+vSQL)
 	}
 	return "json_object(" + strings.Join(pairs, ", ") + ")", nil
 }
@@ -577,10 +435,33 @@ func (c *Compiler) buildSubqueryPath(path ast.PathPattern, prefix string) (strin
 
 		if len(elem.Relationship.Types) == 1 {
 			conditions = append(conditions,
-				relVar+"."+c.schema.EdgeKindCol+" = '"+elem.Relationship.Types[0]+"'")
+				relVar+"."+c.schema.EdgeKindCol+" = '"+SanitizeSQLLiteral(elem.Relationship.Types[0])+"'")
 		} else if len(elem.Relationship.Types) > 1 {
+			var escapedTypes []string
+			for _, t := range elem.Relationship.Types {
+				escapedTypes = append(escapedTypes, SanitizeSQLLiteral(t))
+			}
 			conditions = append(conditions,
-				relVar+"."+c.schema.EdgeKindCol+" IN ('"+strings.Join(elem.Relationship.Types, "', '")+"')")
+				relVar+"."+c.schema.EdgeKindCol+" IN ('"+strings.Join(escapedTypes, "', '")+"')")
+		}
+
+		if elem.Relationship.Properties != nil {
+			for k, v := range elem.Relationship.Properties {
+				valSQL, err := c.visitExpression(v)
+				if err == nil {
+					switch strings.ToLower(k) {
+					case strings.ToLower(c.schema.EdgeKindCol), "kind", "type":
+						conditions = append(conditions, relVar+"."+c.schema.EdgeKindCol+" = "+valSQL)
+					case strings.ToLower(c.schema.EdgeFromCol), "from", "from_id":
+						conditions = append(conditions, relVar+"."+c.schema.EdgeFromCol+" = "+valSQL)
+					case strings.ToLower(c.schema.EdgeToCol), "to", "to_id":
+						conditions = append(conditions, relVar+"."+c.schema.EdgeToCol+" = "+valSQL)
+					default:
+						conditions = append(conditions,
+							c.schema.Dialect.JSONExtract(relVar+"."+c.schema.EdgePropsCol, k)+" = "+valSQL)
+					}
+				}
+			}
 		}
 
 		prevVar = actualTargetVar

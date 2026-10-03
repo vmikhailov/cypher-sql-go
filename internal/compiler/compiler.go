@@ -92,13 +92,17 @@ func NewCompilerWithOptions(query *ast.Query, params map[string]any, cfg SchemaC
 
 func (c *Compiler) escapeVar(name string) string {
 	if reservedKeywords[strings.ToLower(name)] {
-		return `"` + name + `"`
+		return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 	}
 	return name
 }
 
 // Compile generates a CompiledQuery from the AST.
 func (c *Compiler) Compile() (*CompiledQuery, error) {
+	if err := c.validateQuery(c.query); err != nil {
+		return nil, err
+	}
+
 	for k, v := range c.initialParams {
 		c.params[k] = v
 	}
@@ -197,25 +201,12 @@ func (c *Compiler) processPathPattern(
 		headVar = "_n" + strconv.Itoa(c.varIndex)
 	}
 
-	if len(path.Chain) == 0 {
-		if !c.declaredNodes[headVar] {
-			c.bindHeadNode(path.Head, headVar, isOptional, joinKeyword, mainWhereConditions, optionalWhereExtra)
-		}
-		return nil
-	}
-
-	anyDeclared := c.declaredNodes[headVar]
-	if !anyDeclared {
-		for _, elem := range path.Chain {
-			if elem.Target.Variable != "" && c.declaredNodes[elem.Target.Variable] {
-				anyDeclared = true
-				break
-			}
-		}
-	}
-
-	if !anyDeclared {
+	if !c.declaredNodes[headVar] {
 		c.bindHeadNode(path.Head, headVar, isOptional, joinKeyword, mainWhereConditions, optionalWhereExtra)
+	}
+
+	if len(path.Chain) == 0 {
+		return nil
 	}
 
 	return c.processPathChain(path, headVar, isOptional, joinKeyword, mainWhereConditions, optionalWhereExtra)
@@ -283,6 +274,7 @@ func (c *Compiler) processPathChain(
 		}
 
 		c.declaredRels[relVar] = true
+		targetAlreadyDeclared := c.declaredNodes[targetVar]
 		c.declaredNodes[targetVar] = true
 
 		escRel := c.escapeVar(relVar)
@@ -304,43 +296,91 @@ func (c *Compiler) processPathChain(
 		}
 
 		if len(rel.Types) == 1 {
-			relOnConds = append(relOnConds, escRel+"."+c.schema.EdgeKindCol+" = '"+rel.Types[0]+"'")
+			relOnConds = append(relOnConds, escRel+"."+c.schema.EdgeKindCol+" = '"+SanitizeSQLLiteral(rel.Types[0])+"'")
 		} else if len(rel.Types) > 1 {
+			var escapedTypes []string
+			for _, t := range rel.Types {
+				escapedTypes = append(escapedTypes, SanitizeSQLLiteral(t))
+			}
 			relOnConds = append(relOnConds,
-				escRel+"."+c.schema.EdgeKindCol+" IN ('"+strings.Join(rel.Types, "', '")+"')")
+				escRel+"."+c.schema.EdgeKindCol+" IN ('"+strings.Join(escapedTypes, "', '")+"')")
 		}
 
-		c.joins = append(c.joins, JoinModel{
-			Type:  joinKeyword,
-			Table: c.schema.EdgesTable,
-			Alias: escRel,
-			On:    strings.Join(relOnConds, " AND "),
-		})
-
-		var targetOnConds []string
-		switch rel.Direction {
-		case ast.DirectionOutgoing:
-			targetOnConds = append(targetOnConds,
-				escTarget+"."+c.schema.NodeIDCol+" = "+escRel+"."+c.schema.EdgeToCol)
-		case ast.DirectionIncoming:
-			targetOnConds = append(targetOnConds,
-				escTarget+"."+c.schema.NodeIDCol+" = "+escRel+"."+c.schema.EdgeFromCol)
-		case ast.DirectionUndirected:
-			targetOnConds = append(targetOnConds,
-				escTarget+"."+c.schema.NodeIDCol+" = CASE WHEN "+
-					escRel+"."+c.schema.EdgeFromCol+" = "+escPrev+"."+c.schema.NodeIDCol+" THEN "+
-					escRel+"."+c.schema.EdgeToCol+" ELSE "+escRel+"."+c.schema.EdgeFromCol+" END")
+		if rel.Properties != nil {
+			for k, v := range rel.Properties {
+				valSQL, err := c.visitExpression(v)
+				if err == nil {
+					switch strings.ToLower(k) {
+					case strings.ToLower(c.schema.EdgeKindCol), "kind", "type":
+						relOnConds = append(relOnConds, escRel+"."+c.schema.EdgeKindCol+" = "+valSQL)
+					case strings.ToLower(c.schema.EdgeFromCol), "from", "from_id":
+						relOnConds = append(relOnConds, escRel+"."+c.schema.EdgeFromCol+" = "+valSQL)
+					case strings.ToLower(c.schema.EdgeToCol), "to", "to_id":
+						relOnConds = append(relOnConds, escRel+"."+c.schema.EdgeToCol+" = "+valSQL)
+					default:
+						relOnConds = append(relOnConds,
+							c.schema.Dialect.JSONExtract(escRel+"."+c.schema.EdgePropsCol, k)+" = "+valSQL)
+					}
+				}
+			}
 		}
 
-		c.addNodeFiltersToConditions(targetNode, targetVar, &targetOnConds)
-		targetOnConds = append(targetOnConds, optionalWhereExtra...)
+		if targetAlreadyDeclared {
+			switch rel.Direction {
+			case ast.DirectionOutgoing:
+				relOnConds = append(relOnConds,
+					escTarget+"."+c.schema.NodeIDCol+" = "+escRel+"."+c.schema.EdgeToCol)
+			case ast.DirectionIncoming:
+				relOnConds = append(relOnConds,
+					escTarget+"."+c.schema.NodeIDCol+" = "+escRel+"."+c.schema.EdgeFromCol)
+			case ast.DirectionUndirected:
+				relOnConds = append(relOnConds,
+					escTarget+"."+c.schema.NodeIDCol+" = CASE WHEN "+
+						escRel+"."+c.schema.EdgeFromCol+" = "+escPrev+"."+c.schema.NodeIDCol+" THEN "+
+						escRel+"."+c.schema.EdgeToCol+" ELSE "+escRel+"."+c.schema.EdgeFromCol+" END")
+			}
+			c.addNodeFiltersToConditions(targetNode, targetVar, &relOnConds)
+			relOnConds = append(relOnConds, optionalWhereExtra...)
 
-		c.joins = append(c.joins, JoinModel{
-			Type:  joinKeyword,
-			Table: c.schema.NodesTable,
-			Alias: escTarget,
-			On:    strings.Join(targetOnConds, " AND "),
-		})
+			c.joins = append(c.joins, JoinModel{
+				Type:  joinKeyword,
+				Table: c.schema.EdgesTable,
+				Alias: escRel,
+				On:    strings.Join(relOnConds, " AND "),
+			})
+		} else {
+			c.joins = append(c.joins, JoinModel{
+				Type:  joinKeyword,
+				Table: c.schema.EdgesTable,
+				Alias: escRel,
+				On:    strings.Join(relOnConds, " AND "),
+			})
+
+			var targetOnConds []string
+			switch rel.Direction {
+			case ast.DirectionOutgoing:
+				targetOnConds = append(targetOnConds,
+					escTarget+"."+c.schema.NodeIDCol+" = "+escRel+"."+c.schema.EdgeToCol)
+			case ast.DirectionIncoming:
+				targetOnConds = append(targetOnConds,
+					escTarget+"."+c.schema.NodeIDCol+" = "+escRel+"."+c.schema.EdgeFromCol)
+			case ast.DirectionUndirected:
+				targetOnConds = append(targetOnConds,
+					escTarget+"."+c.schema.NodeIDCol+" = CASE WHEN "+
+						escRel+"."+c.schema.EdgeFromCol+" = "+escPrev+"."+c.schema.NodeIDCol+" THEN "+
+						escRel+"."+c.schema.EdgeToCol+" ELSE "+escRel+"."+c.schema.EdgeFromCol+" END")
+			}
+
+			c.addNodeFiltersToConditions(targetNode, targetVar, &targetOnConds)
+			targetOnConds = append(targetOnConds, optionalWhereExtra...)
+
+			c.joins = append(c.joins, JoinModel{
+				Type:  joinKeyword,
+				Table: c.schema.NodesTable,
+				Alias: escTarget,
+				On:    strings.Join(targetOnConds, " AND "),
+			})
+		}
 
 		prevVar = targetVar
 	}
@@ -356,8 +396,15 @@ func (c *Compiler) addNodeFiltersToConditions(node ast.NodePattern, nodeVar stri
 		for k, v := range node.Properties {
 			valSQL, err := c.visitExpression(v)
 			if err == nil {
-				*conditions = append(*conditions,
-					"json_extract("+nVar+"."+c.schema.NodePropsCol+", '$."+k+"') = "+valSQL)
+				switch strings.ToLower(k) {
+				case strings.ToLower(c.schema.NodeIDCol), "id":
+					*conditions = append(*conditions, nVar+"."+c.schema.NodeIDCol+" = "+valSQL)
+				case strings.ToLower(c.schema.NodeKindCol), "kind":
+					*conditions = append(*conditions, nVar+"."+c.schema.NodeKindCol+" = "+valSQL)
+				default:
+					*conditions = append(*conditions,
+						c.schema.Dialect.JSONExtract(nVar+"."+c.schema.NodePropsCol, k)+" = "+valSQL)
+				}
 			}
 		}
 	}
@@ -369,7 +416,7 @@ func (c *Compiler) compileNodeLabelPredicate(nVar, label string) string {
 			return pred
 		}
 	}
-	return nVar + "." + c.schema.NodeKindCol + " = '" + label + "'"
+	return nVar + "." + c.schema.NodeKindCol + " = '" + SanitizeSQLLiteral(label) + "'"
 }
 
 func (c *Compiler) processWithClauses(
@@ -490,7 +537,7 @@ func (c *Compiler) buildSelectColumns(ret ast.ReturnClause) ([]string, error) {
 			}
 		}
 		if alias != "" {
-			cols = append(cols, exprSQL+` AS "`+alias+`"`)
+			cols = append(cols, exprSQL+` AS "`+strings.ReplaceAll(alias, `"`, `""`)+`"`)
 		} else {
 			cols = append(cols, exprSQL)
 		}
