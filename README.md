@@ -157,7 +157,7 @@ compiled, err := cyphersql.CompileWithSchema(cypherQuery, chConfig)
 
 ---
 
-## 📂 Runnable Examples
+## Runnable Examples
 
 Check the [`examples/`](./examples) directory for complete, runnable applications:
 
@@ -168,7 +168,7 @@ Check the [`examples/`](./examples) directory for complete, runnable application
 
 ---
 
-## 🚀 Quickstart
+## Quickstart
 
 ### 1. Install
 
