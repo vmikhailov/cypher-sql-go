@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 var keywords = map[string]TokenType{
@@ -67,9 +68,10 @@ func (l *Lexer) readChar() {
 		l.ch = 0
 		l.pos = l.read
 	} else {
-		l.ch = rune(l.input[l.read])
+		r, size := utf8.DecodeRuneInString(l.input[l.read:])
+		l.ch = r
 		l.pos = l.read
-		l.read++
+		l.read += size
 	}
 	l.column++
 }
@@ -78,7 +80,8 @@ func (l *Lexer) peekChar() rune {
 	if l.read >= len(l.input) {
 		return 0
 	}
-	return rune(l.input[l.read])
+	r, _ := utf8.DecodeRuneInString(l.input[l.read:])
+	return r
 }
 
 // NextToken returns the next token from input.

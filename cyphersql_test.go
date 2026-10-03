@@ -387,6 +387,69 @@ func TestCustomLabelResolver_Hook(t *testing.T) {
 	}
 }
 
+func TestCompile_UTF8AndNonASCII(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	schema := `
+		CREATE TABLE nodes (id TEXT PRIMARY KEY, kind TEXT NOT NULL, properties TEXT NOT NULL);
+		INSERT INTO nodes VALUES 
+			('p:anton', 'Person', '{"name": "Антон", "city": "İstanbul"}'),
+			('p:slava', 'Person', '{"name": "Вячеслав", "city": "München"}');
+	`
+	if _, err := db.Exec(schema); err != nil {
+		t.Fatalf("failed to create schema: %v", err)
+	}
+
+	// 1. Exact Cyrillic match in literal pattern
+	c1, err := cyphersql.Compile("MATCH (p:Person {name: 'Антон'}) RETURN p.name AS name")
+	if err != nil {
+		t.Fatalf("compile c1 failed: %v", err)
+	}
+	if !strings.Contains(c1.SQL, "'Антон'") {
+		t.Errorf("expected 'Антон' in SQL, got: %s", c1.SQL)
+	}
+	var name1 string
+	if err := db.QueryRow(c1.SQL).Scan(&name1); err != nil {
+		t.Fatalf("exec c1 failed: %v", err)
+	}
+	if name1 != "Антон" {
+		t.Errorf("expected Антон, got %s", name1)
+	}
+
+	// 2. Turkish character in WHERE clause
+	c2, err := cyphersql.Compile("MATCH (p:Person) WHERE p.city = 'İstanbul' RETURN p.name AS name")
+	if err != nil {
+		t.Fatalf("compile c2 failed: %v", err)
+	}
+	if !strings.Contains(c2.SQL, "'İstanbul'") {
+		t.Errorf("expected 'İstanbul' in SQL, got: %s", c2.SQL)
+	}
+	var name2 string
+	if err := db.QueryRow(c2.SQL).Scan(&name2); err != nil {
+		t.Fatalf("exec c2 failed: %v", err)
+	}
+	if name2 != "Антон" {
+		t.Errorf("expected Антон for İstanbul city, got %s", name2)
+	}
+
+	// 3. Substring with CONTAINS in Cyrillic
+	c3, err := cyphersql.Compile("MATCH (p:Person) WHERE p.name CONTAINS 'нто' RETURN p.name AS name")
+	if err != nil {
+		t.Fatalf("compile c3 failed: %v", err)
+	}
+	var name3 string
+	if err := db.QueryRow(c3.SQL).Scan(&name3); err != nil {
+		t.Fatalf("exec c3 failed: %v", err)
+	}
+	if name3 != "Антон" {
+		t.Errorf("expected Антон for CONTAINS 'нто', got %s", name3)
+	}
+}
+
 func BenchmarkCompile(b *testing.B) {
 	cypher := `
 		MATCH (p:Project) WHERE p.name = 'OrdersService'
