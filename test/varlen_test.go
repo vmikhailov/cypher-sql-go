@@ -237,4 +237,14 @@ func TestVarLen_UnanchoredExplosionProtection(t *testing.T) {
 	if !strings.Contains(err.Error(), "anchored") {
 		t.Fatalf("expected error mentioning anchored, got: %v", err)
 	}
+
+	// 3. Label-only filter without property filter -> must also return error requiring property anchor
+	cypherLabelOnly := `MATCH (a:Person)-[*1..2]->(b) RETURN a, b LIMIT 50`
+	_, err = cyphersql.Compile(cypherLabelOnly)
+	if err == nil {
+		t.Fatalf("expected error for label-only varlen path, got nil")
+	}
+	if !strings.Contains(err.Error(), "anchored") {
+		t.Fatalf("expected error mentioning anchored, got: %v", err)
+	}
 }

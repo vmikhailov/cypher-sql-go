@@ -73,13 +73,18 @@ func (c *Compiler) processVarLenStep(
 	prevFilters := append(c.collectNodePatternFilters(prevNode, "seed_n"), c.collectWhereConjunctsForVar(prevVar, "seed_n")...)
 	targetFilters := append(c.collectNodePatternFilters(targetNode, "seed_n"), c.collectWhereConjunctsForVar(targetVar, "seed_n")...)
 
+	prevHasProp := c.nodeHasPropertyAnchor(prevNode, prevVar)
+	targetHasProp := c.nodeHasPropertyAnchor(targetNode, targetVar)
+
 	var anchorEnd string
-	if len(prevFilters) > 0 {
+	if prevHasProp && !targetHasProp {
 		anchorEnd = "prev"
-	} else if len(targetFilters) > 0 {
+	} else if targetHasProp && !prevHasProp {
 		anchorEnd = "target"
+	} else if prevHasProp && targetHasProp {
+		anchorEnd = "prev"
 	} else {
-		return fmt.Errorf("variable-length traversal requires an anchored start or target node (label or property filter) to prevent full-graph traversal")
+		return fmt.Errorf("variable-length traversal requires an anchored start or target node with property filters (e.g. {id: ...} or WHERE x.name = ...) to prevent full-graph traversal; node label alone (e.g. :Person) is not selective enough")
 	}
 
 	edgeKey := "char(31) || e." + c.schema.EdgeFromCol + " || char(30) || e." + c.schema.EdgeToCol + " || char(30) || e." + c.schema.EdgeKindCol + " || char(31)"
@@ -272,6 +277,25 @@ func (c *Compiler) collectNodePatternFilters(node ast.NodePattern, seedAlias str
 	var conds []string
 	c.addNodeFiltersToConditions(node, seedAlias, &conds)
 	return conds
+}
+
+func (c *Compiler) nodeHasPropertyAnchor(node ast.NodePattern, varName string) bool {
+	if node.Properties != nil {
+		for k := range node.Properties {
+			lowerK := strings.ToLower(k)
+			if lowerK != strings.ToLower(c.schema.NodeKindCol) && lowerK != "kind" && lowerK != "label" {
+				return true
+			}
+		}
+	}
+	whereConds := c.collectWhereConjunctsForVar(varName, "seed_n")
+	for _, cond := range whereConds {
+		kindPrefix := "seed_n." + c.schema.NodeKindCol + " = "
+		if !strings.HasPrefix(cond, kindPrefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Compiler) collectWhereConjunctsForVar(varName string, seedAlias string) []string {
