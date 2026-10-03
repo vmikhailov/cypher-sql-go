@@ -218,13 +218,30 @@ func TestVarLen_RelationshipPropertyFilter(t *testing.T) {
 }
 
 func TestVarLen_UnanchoredExplosionProtection(t *testing.T) {
-	// Neither endpoint has filters and max hops > 3 -> must return error to prevent full graph explosion
-	cypher := `MATCH (a)-[*1..5]->(b) RETURN a, b`
-	_, err := cyphersql.Compile(cypher)
+	// 1. Neither endpoint has filters and no LIMIT -> must return error
+	cypherNoLimit := `MATCH (a)-[*1..2]->(b) RETURN a, b`
+	_, err := cyphersql.Compile(cypherNoLimit)
+	if err == nil {
+		t.Fatalf("expected error for unanchored path without LIMIT, got nil")
+	}
+	if !strings.Contains(err.Error(), "LIMIT") {
+		t.Fatalf("expected error mentioning LIMIT, got: %v", err)
+	}
+
+	// 2. Unanchored path with LIMIT and maxHops <= 3 -> allowed
+	cypherWithLimit := `MATCH (a)-[*1..2]->(b) RETURN a, b LIMIT 50`
+	_, err = cyphersql.Compile(cypherWithLimit)
+	if err != nil {
+		t.Fatalf("expected unanchored path with LIMIT to compile, got error: %v", err)
+	}
+
+	// 3. Unanchored path with max hops > 3 even with LIMIT -> must return error
+	cypherTooDeep := `MATCH (a)-[*1..5]->(b) RETURN a, b LIMIT 50`
+	_, err = cyphersql.Compile(cypherTooDeep)
 	if err == nil {
 		t.Fatalf("expected error for unanchored path with max > 3, got nil")
 	}
-	if !strings.Contains(err.Error(), "anchored") {
-		t.Fatalf("expected error mentioning anchored endpoints, got: %v", err)
+	if !strings.Contains(err.Error(), "small hop limit") {
+		t.Fatalf("expected error mentioning small hop limit, got: %v", err)
 	}
 }

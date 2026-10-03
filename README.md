@@ -237,6 +237,12 @@ func main() {
   * Incoming: `(a)<-[:CALLS]-(b)`
   * Undirected: `(a)-[:CALLS]-(b)`
   * Multi-type: `(a)-[:CALLS|DEPENDS_ON]->(b)`
+* **Variable-Length Relationships (Recursive CTEs):**
+  * Arbitrary depth bounds: `(a)-[*1..3]->(b)`, `(a)<-[*2..5]-(b)`, `(a)-[*..4]->(b)`
+  * Unbounded depth safety: `(a)-[*]->(b)` and `(a)-[*1..]->(b)` default to a 10-hop maximum depth (`min=1, max=10`)
+  * Cycle prevention: strict Cypher path trail semantics (`instr(trail, edge_id) = 0`) to prevent infinite recursion
+  * Anchored CTE seeding: automatically seeds recursion from start or target node filters for sub-millisecond execution
+  * Guardrails: completely unanchored traversals (no label or property filters on either endpoint) require an explicit `LIMIT` and depth `<= 3` to prevent full-graph combinatorial explosion
 * **Cartesian Product Decomposition:**
   * Independent multi-branch `OPTIONAL MATCH` clauses are automatically decomposed into isolated correlated
     subqueries, preventing intermediate $O(N \cdot M \cdot K)$ row explosion.
