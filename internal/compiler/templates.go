@@ -78,7 +78,7 @@ SELECT {{ if .IsDistinct }}DISTINCT {{ end }}{{ join .Columns ", " }}
 FROM {{ .FromTable }} {{ .FromAlias }}
 {{- end }}
 {{- range .Joins }}
-{{ .Type }} {{ .Table }} {{ .Alias }} ON {{ .On }}
+{{ .Type }} {{ .Table }} {{ .Alias }}{{ if .On }} ON {{ .On }}{{ end }}
 {{- end }}
 {{- if .Where }}
 WHERE {{ .Where }}

@@ -168,6 +168,39 @@ func (c *Compiler) compileGraphFunction(lower string, fn ast.FunctionCallExpr) (
 		}
 		return "(" + argSQL + " IS NOT NULL)", true, nil
 
+	case "keys":
+		if len(fn.Args) != 1 {
+			return "", true, fmt.Errorf("keys() takes exactly 1 argument, got %d", len(fn.Args))
+		}
+		if id, ok := fn.Args[0].(ast.IdentifierExpr); ok {
+			v := c.escapeVar(id.Name)
+			if c.declaredNodes[id.Name] {
+				return "(SELECT json_group_array(key) FROM json_each(" + v + "." + c.schema.NodePropsCol + "))", true, nil
+			}
+			if c.declaredRels[id.Name] {
+				return "(SELECT json_group_array(key) FROM json_each(" + v + "." + c.schema.EdgePropsCol + "))", true, nil
+			}
+		}
+		argSQL, err := c.visitExpression(fn.Args[0])
+		if err != nil {
+			return "", true, err
+		}
+		return "(SELECT json_group_array(key) FROM json_each(" + argSQL + "))", true, nil
+
+	case "nodes":
+		if len(fn.Args) != 1 {
+			return "", true, fmt.Errorf("nodes() takes exactly 1 argument, got %d", len(fn.Args))
+		}
+		if id, ok := fn.Args[0].(ast.IdentifierExpr); ok {
+			v := c.escapeVar(id.Name)
+			return "json_array(" + v + ".start_id, " + v + ".end_id)", true, nil
+		}
+		argSQL, err := c.visitExpression(fn.Args[0])
+		if err != nil {
+			return "", true, err
+		}
+		return argSQL, true, nil
+
 	default:
 		return "", false, nil
 	}
@@ -259,6 +292,12 @@ func (c *Compiler) compileScalarFunction(lower string, fn ast.FunctionCallExpr) 
 	case "length":
 		if len(fn.Args) != 1 {
 			return "", true, fmt.Errorf("length() takes exactly 1 argument, got %d", len(fn.Args))
+		}
+		if id, ok := fn.Args[0].(ast.IdentifierExpr); ok {
+			v := c.escapeVar(id.Name)
+			if c.declaredRels[id.Name] || (c.varAliases != nil && c.varAliases[id.Name] != "") {
+				return v + ".depth", true, nil
+			}
 		}
 		argSQL, err := c.visitExpression(fn.Args[0])
 		if err != nil {

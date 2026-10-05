@@ -19,6 +19,8 @@ func (c *Compiler) processVarLenStep(
 	targetAlreadyDeclared bool,
 	joinKeyword string,
 	optionalWhereExtra []string,
+	isShortestPath bool,
+	pathVar string,
 ) error {
 	minHops := 1
 	if rel.MinHops != nil {
@@ -206,6 +208,10 @@ func (c *Compiler) processVarLenStep(
 		cteOnConds = append(cteOnConds,
 			escRel+".start_id = "+escPrev+"."+c.schema.NodeIDCol,
 			escRel+".depth >= "+strconv.Itoa(minHops))
+		if isShortestPath {
+			cteOnConds = append(cteOnConds, fmt.Sprintf("%s.depth = (SELECT min(depth) FROM %s WHERE start_id = %s.%s AND end_id = %s.%s)",
+				escRel, cteName, escPrev, c.schema.NodeIDCol, escTarget, c.schema.NodeIDCol))
+		}
 		if targetAlreadyDeclared {
 			cteOnConds = append(cteOnConds, escTarget+"."+c.schema.NodeIDCol+" = "+escRel+".end_id")
 			c.addNodeFiltersToConditions(targetNode, targetVar, &cteOnConds)
@@ -239,6 +245,10 @@ func (c *Compiler) processVarLenStep(
 		cteOnConds = append(cteOnConds,
 			escRel+".end_id = "+escPrev+"."+c.schema.NodeIDCol,
 			escRel+".depth >= "+strconv.Itoa(minHops))
+		if isShortestPath {
+			cteOnConds = append(cteOnConds, fmt.Sprintf("%s.depth = (SELECT min(depth) FROM %s WHERE start_id = %s.%s AND end_id = %s.%s)",
+				escRel, cteName, escTarget, c.schema.NodeIDCol, escPrev, c.schema.NodeIDCol))
+		}
 		if targetAlreadyDeclared {
 			cteOnConds = append(cteOnConds, escTarget+"."+c.schema.NodeIDCol+" = "+escRel+".start_id")
 			c.addNodeFiltersToConditions(targetNode, targetVar, &cteOnConds)
@@ -268,6 +278,13 @@ func (c *Compiler) processVarLenStep(
 				On:    strings.Join(targetOnConds, " AND "),
 			})
 		}
+	}
+
+	if pathVar != "" {
+		if c.varAliases == nil {
+			c.varAliases = make(map[string]string)
+		}
+		c.varAliases[pathVar] = escRel
 	}
 
 	return nil

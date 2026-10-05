@@ -34,8 +34,11 @@ type PathElement struct {
 
 // PathPattern represents (head)-[r]->(target)-...
 type PathPattern struct {
-	Head  NodePattern
-	Chain []PathElement
+	Head               NodePattern
+	Chain              []PathElement
+	PathVariable       string
+	IsShortestPath     bool
+	IsAllShortestPaths bool
 }
 
 // MatchClause represents MATCH or OPTIONAL MATCH.
@@ -58,6 +61,23 @@ type WithClause struct {
 	Where      Expression
 }
 
+// UnwindClause represents UNWIND expr AS alias.
+type UnwindClause struct {
+	Expression Expression
+	Alias      string
+}
+
+// CallClause represents CALL { subquery }.
+type CallClause struct {
+	Subquery *Query
+}
+
+// UnionClause represents UNION [ALL] query.
+type UnionClause struct {
+	IsAll bool
+	Query *Query
+}
+
 // ReturnClause represents RETURN [DISTINCT] item1, item2.
 type ReturnClause struct {
 	IsDistinct bool
@@ -74,11 +94,14 @@ type OrderByItem struct {
 type Query struct {
 	Matches     []MatchClause
 	WithClauses []WithClause
+	Unwinds     []UnwindClause
+	Calls       []CallClause
 	Where       Expression
 	Return      ReturnClause
 	OrderBy     []OrderByItem
 	Skip        Expression
 	Limit       Expression
+	Unions      []UnionClause
 }
 
 // Expression is the base interface for AST expressions.
@@ -260,3 +283,37 @@ type CaseExpr struct {
 }
 
 func (CaseExpr) exprNode() {}
+
+// HasLabelExpr represents n:Label in WHERE clauses.
+type HasLabelExpr struct {
+	Node  Expression
+	Label string
+}
+
+func (HasLabelExpr) exprNode() {}
+
+// MapProjectionElement represents .property or key: expr in a map projection.
+type MapProjectionElement struct {
+	PropertyName string
+	Value        Expression
+	IsAllProps   bool
+}
+
+// MapProjectionExpr represents base { .prop, key: expr }.
+type MapProjectionExpr struct {
+	Base     Expression
+	Elements []MapProjectionElement
+}
+
+func (MapProjectionExpr) exprNode() {}
+
+// ReduceExpr represents reduce(acc = init, x IN list | expr).
+type ReduceExpr struct {
+	Accumulator string
+	Initial     Expression
+	Variable    string
+	List        Expression
+	Expression  Expression
+}
+
+func (ReduceExpr) exprNode() {}

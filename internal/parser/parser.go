@@ -55,12 +55,45 @@ func (p *Parser) expect(t TokenType) error {
 	return nil
 }
 
-// Parse parses the entire Cypher query.
+// Parse parses the entire Cypher query, including compound UNION / UNION ALL statements.
 func (p *Parser) Parse() (*ast.Query, error) {
+	first, err := p.parseSingleQuery()
+	if err != nil {
+		return nil, err
+	}
+
+	for p.current.Type == TokenUnion {
+		p.nextToken() // skip UNION
+		isAll := false
+		if p.current.Type == TokenAll {
+			isAll = true
+			p.nextToken()
+		}
+		nextQ, err := p.parseSingleQuery()
+		if err != nil {
+			return nil, err
+		}
+		first.Unions = append(first.Unions, ast.UnionClause{
+			IsAll: isAll,
+			Query: nextQ,
+		})
+	}
+
+	if p.current.Type != TokenEOF {
+		if p.current.Type == TokenError {
+			return nil, p.errorf("%s", p.current.Value)
+		}
+		return nil, p.errorf("unexpected trailing token %s (%q)", p.current.Type, p.current.Value)
+	}
+
+	return first, nil
+}
+
+func (p *Parser) parseSingleQuery() (*ast.Query, error) {
 	q := &ast.Query{}
 
-	// 1. Matches and intermediate WITH clauses
-	for p.current.Type == TokenMatch || p.current.Type == TokenOptional || p.current.Type == TokenWith {
+	// 1. Matches, intermediate WITH clauses, UNWIND clauses, and CALL clauses
+	for p.current.Type == TokenMatch || p.current.Type == TokenOptional || p.current.Type == TokenWith || p.current.Type == TokenUnwind || p.current.Type == TokenCall {
 		if p.current.Type == TokenMatch || p.current.Type == TokenOptional {
 			match, err := p.parseMatch()
 			if err != nil {
@@ -73,6 +106,18 @@ func (p *Parser) Parse() (*ast.Query, error) {
 				return nil, err
 			}
 			q.WithClauses = append(q.WithClauses, *with)
+		} else if p.current.Type == TokenUnwind {
+			unwind, err := p.parseUnwind()
+			if err != nil {
+				return nil, err
+			}
+			q.Unwinds = append(q.Unwinds, *unwind)
+		} else if p.current.Type == TokenCall {
+			call, err := p.parseCall()
+			if err != nil {
+				return nil, err
+			}
+			q.Calls = append(q.Calls, *call)
 		}
 	}
 
@@ -160,14 +205,43 @@ func (p *Parser) Parse() (*ast.Query, error) {
 		}
 	}
 
-	if p.current.Type != TokenEOF {
-		if p.current.Type == TokenError {
-			return nil, p.errorf("%s", p.current.Value)
-		}
-		return nil, p.errorf("unexpected trailing token %s (%q)", p.current.Type, p.current.Value)
-	}
-
 	return q, nil
+}
+
+func (p *Parser) parseUnwind() (*ast.UnwindClause, error) {
+	p.nextToken() // skip UNWIND
+	expr, err := p.parseExpression()
+	if err != nil {
+		return nil, err
+	}
+	if err := p.expect(TokenAs); err != nil {
+		return nil, err
+	}
+	alias, err := p.parseName()
+	if err != nil {
+		return nil, err
+	}
+	return &ast.UnwindClause{
+		Expression: expr,
+		Alias:      alias,
+	}, nil
+}
+
+func (p *Parser) parseCall() (*ast.CallClause, error) {
+	p.nextToken() // skip CALL
+	if err := p.expect(TokenLBrace); err != nil {
+		return nil, err
+	}
+	subquery, err := p.parseSingleQuery()
+	if err != nil {
+		return nil, err
+	}
+	if err := p.expect(TokenRBrace); err != nil {
+		return nil, err
+	}
+	return &ast.CallClause{
+		Subquery: subquery,
+	}, nil
 }
 
 func (p *Parser) parseMatch() (*ast.MatchClause, error) {
@@ -298,6 +372,36 @@ func (p *Parser) parseProjectionItem() (*ast.ProjectionItem, error) {
 }
 
 func (p *Parser) parsePathPattern() (*ast.PathPattern, error) {
+	pathVar := ""
+	if p.isNameToken() && p.peek.Type == TokenEqual {
+		v, err := p.parseName()
+		if err != nil {
+			return nil, err
+		}
+		p.nextToken() // skip '='
+		pathVar = v
+	}
+
+	if p.isNameToken() && (strings.EqualFold(p.current.Value, "shortestPath") || strings.EqualFold(p.current.Value, "allShortestPaths")) && p.peek.Type == TokenLParen {
+		fnName := strings.ToLower(p.current.Value)
+		isAll := fnName == "allshortestpaths"
+		p.nextToken() // skip shortestPath / allShortestPaths
+		if err := p.expect(TokenLParen); err != nil {
+			return nil, err
+		}
+		innerPath, err := p.parsePathPattern()
+		if err != nil {
+			return nil, err
+		}
+		if err := p.expect(TokenRParen); err != nil {
+			return nil, err
+		}
+		innerPath.PathVariable = pathVar
+		innerPath.IsShortestPath = true
+		innerPath.IsAllShortestPaths = isAll
+		return innerPath, nil
+	}
+
 	head, err := p.parseNodePattern()
 	if err != nil {
 		return nil, err
@@ -312,7 +416,13 @@ func (p *Parser) parsePathPattern() (*ast.PathPattern, error) {
 		chain = append(chain, *elem)
 	}
 
-	return &ast.PathPattern{Head: *head, Chain: chain}, nil
+	return &ast.PathPattern{
+		Head:               *head,
+		Chain:              chain,
+		PathVariable:       pathVar,
+		IsShortestPath:     false,
+		IsAllShortestPaths: false,
+	}, nil
 }
 
 func (p *Parser) parseNodePattern() (*ast.NodePattern, error) {
@@ -771,16 +881,77 @@ func (p *Parser) parsePostfix() (ast.Expression, error) {
 				expr = ast.PropertyAccessExpr{Variable: fmt.Sprintf("%v", expr), Property: prop}
 			}
 		} else if p.current.Type == TokenColon {
-			// Label check: e.g. p:Service or ep:Endpoint
+			// Label check: e.g. p:Service or ep:Endpoint:Active
 			p.nextToken()
 			label, err := p.parseName()
 			if err != nil {
 				return nil, err
 			}
-			expr = ast.BinaryExpr{
-				Left:  expr,
-				Op:    ast.OpEq,
-				Right: ast.LiteralExpr{Kind: ast.LiteralString, StrVal: label, Raw: label},
+			if hl, ok := expr.(ast.HasLabelExpr); ok {
+				expr = ast.BinaryExpr{
+					Left:  hl,
+					Op:    ast.OpAnd,
+					Right: ast.HasLabelExpr{Node: hl.Node, Label: label},
+				}
+			} else if bin, ok := expr.(ast.BinaryExpr); ok && bin.Op == ast.OpAnd {
+				base := bin.Left
+				if hlb, ok := base.(ast.HasLabelExpr); ok {
+					base = hlb.Node
+				}
+				expr = ast.BinaryExpr{
+					Left:  bin,
+					Op:    ast.OpAnd,
+					Right: ast.HasLabelExpr{Node: base, Label: label},
+				}
+			} else {
+				expr = ast.HasLabelExpr{
+					Node:  expr,
+					Label: label,
+				}
+			}
+		} else if p.current.Type == TokenLBrace {
+			// Map Projection: e.g. n { .name, .age, custom: 'val', .* }
+			p.nextToken() // skip '{'
+			var elements []ast.MapProjectionElement
+			for p.current.Type != TokenRBrace {
+				if p.current.Type == TokenDot {
+					p.nextToken() // skip '.'
+					if p.current.Type == TokenAsterisk {
+						p.nextToken() // skip '*'
+						elements = append(elements, ast.MapProjectionElement{IsAllProps: true})
+					} else {
+						prop, err := p.parseName()
+						if err != nil {
+							return nil, err
+						}
+						elements = append(elements, ast.MapProjectionElement{PropertyName: prop})
+					}
+				} else {
+					prop, err := p.parseName()
+					if err != nil {
+						return nil, err
+					}
+					if err := p.expect(TokenColon); err != nil {
+						return nil, err
+					}
+					val, err := p.parseExpression()
+					if err != nil {
+						return nil, err
+					}
+					elements = append(elements, ast.MapProjectionElement{PropertyName: prop, Value: val})
+				}
+				if p.current.Type == TokenComma {
+					p.nextToken()
+				} else {
+					break
+				}
+			}
+			if err := p.expect(TokenRBrace); err != nil {
+				return nil, err
+			}
+			expr = ast.MapProjectionExpr{
+				Base:     expr,
+				Elements: elements,
 			}
 		} else {
 			break
@@ -856,7 +1027,7 @@ func (p *Parser) parsePrimary() (ast.Expression, error) {
 		}
 		return ast.FunctionCallExpr{Name: "exists", Args: []ast.Expression{inner}}, nil
 
-	case TokenIdent:
+	case TokenIdent, TokenReduce:
 		ident := p.current.Value
 		lower := strings.ToLower(ident)
 
@@ -891,6 +1062,54 @@ func (p *Parser) parsePrimary() (ast.Expression, error) {
 				Variable:   varName,
 				List:       listExpr,
 				Predicate:  predExpr,
+			}, nil
+		}
+
+		// Check for reduce: reduce(acc = init, x IN list | expr)
+		if lower == "reduce" && p.peek.Type == TokenLParen {
+			p.nextToken() // skip reduce
+			p.nextToken() // skip (
+			accName, err := p.parseName()
+			if err != nil {
+				return nil, err
+			}
+			if err := p.expect(TokenEqual); err != nil {
+				return nil, err
+			}
+			initExpr, err := p.parseExpression()
+			if err != nil {
+				return nil, err
+			}
+			if err := p.expect(TokenComma); err != nil {
+				return nil, err
+			}
+			varName, err := p.parseName()
+			if err != nil {
+				return nil, err
+			}
+			if err := p.expect(TokenIn); err != nil {
+				return nil, err
+			}
+			listExpr, err := p.parseExpression()
+			if err != nil {
+				return nil, err
+			}
+			if err := p.expect(TokenPipe); err != nil {
+				return nil, err
+			}
+			bodyExpr, err := p.parseExpression()
+			if err != nil {
+				return nil, err
+			}
+			if err := p.expect(TokenRParen); err != nil {
+				return nil, err
+			}
+			return ast.ReduceExpr{
+				Accumulator: accName,
+				Initial:     initExpr,
+				Variable:    varName,
+				List:        listExpr,
+				Expression:  bodyExpr,
 			}, nil
 		}
 

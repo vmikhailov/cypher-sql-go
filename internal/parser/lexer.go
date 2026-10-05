@@ -40,6 +40,11 @@ var keywords = map[string]TokenType{
 	"CONTAINS": TokenContains,
 	"ASC":      TokenAsc,
 	"DESC":     TokenDesc,
+	"UNWIND":   TokenUnwind,
+	"CALL":     TokenCall,
+	"UNION":    TokenUnion,
+	"ALL":      TokenAll,
+	"REDUCE":   TokenReduce,
 }
 
 // Lexer tokenizes Cypher source text.

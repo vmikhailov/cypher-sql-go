@@ -46,6 +46,27 @@ func (c *Compiler) validateQuery(q *ast.Query) error {
 		}
 	}
 
+	for _, u := range q.Unwinds {
+		if err := ValidateIdentifier("alias", u.Alias); err != nil {
+			return err
+		}
+		if err := c.validateExpr(u.Expression); err != nil {
+			return err
+		}
+	}
+
+	for _, call := range q.Calls {
+		if err := c.validateQuery(call.Subquery); err != nil {
+			return err
+		}
+	}
+
+	for _, u := range q.Unions {
+		if err := c.validateQuery(u.Query); err != nil {
+			return err
+		}
+	}
+
 	if q.Where != nil {
 		if err := c.validateExpr(q.Where); err != nil {
 			return err
@@ -285,6 +306,42 @@ func (c *Compiler) validateExpr(expr ast.Expression) error {
 			}
 		}
 		return c.validateExpr(e.Else)
+	case ast.HasLabelExpr:
+		if err := c.validateExpr(e.Node); err != nil {
+			return err
+		}
+		return ValidateIdentifier("label", e.Label)
+	case ast.MapProjectionExpr:
+		if err := c.validateExpr(e.Base); err != nil {
+			return err
+		}
+		for _, elem := range e.Elements {
+			if !elem.IsAllProps {
+				if err := ValidateIdentifier("property", elem.PropertyName); err != nil {
+					return err
+				}
+				if elem.Value != nil {
+					if err := c.validateExpr(elem.Value); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		return nil
+	case ast.ReduceExpr:
+		if err := ValidateIdentifier("variable", e.Accumulator); err != nil {
+			return err
+		}
+		if err := ValidateIdentifier("variable", e.Variable); err != nil {
+			return err
+		}
+		if err := c.validateExpr(e.Initial); err != nil {
+			return err
+		}
+		if err := c.validateExpr(e.List); err != nil {
+			return err
+		}
+		return c.validateExpr(e.Expression)
 	case ast.LiteralExpr, ast.WildcardExpr:
 		return nil
 	default:

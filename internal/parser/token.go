@@ -45,6 +45,11 @@ const (
 	TokenContains
 	TokenAsc
 	TokenDesc
+	TokenUnwind
+	TokenCall
+	TokenUnion
+	TokenAll
+	TokenReduce
 
 	// Punctuation & Operators
 	TokenLParen   // (
@@ -112,6 +117,11 @@ var tokenNames = map[TokenType]string{
 	TokenContains: "CONTAINS",
 	TokenAsc:      "ASC",
 	TokenDesc:     "DESC",
+	TokenUnwind:   "UNWIND",
+	TokenCall:     "CALL",
+	TokenUnion:    "UNION",
+	TokenAll:      "ALL",
+	TokenReduce:   "REDUCE",
 
 	TokenLParen:   "(",
 	TokenRParen:   ")",

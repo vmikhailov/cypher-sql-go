@@ -129,6 +129,17 @@ func (c *Compiler) Compile() (*CompiledQuery, error) {
 		}
 	}
 
+	// 2. UNWIND clauses: unnest collections / arrays into relational table rows (json_each / arrayJoin)
+	if err := c.processUnwinds(c.query.Unwinds); err != nil {
+		return nil, err
+	}
+
+	// 3. CALL { ... } clauses: compile correlated subqueries and bind returned aliases
+	if err := c.processCalls(c.query.Calls); err != nil {
+		return nil, err
+	}
+
+	// 4. WITH clauses: handle aggregations, aliasing, and intermediate filters
 	if err := c.processWithClauses(&whereConditions, &groupByColumns, &havingConditions); err != nil {
 		return nil, err
 	}
@@ -285,13 +296,17 @@ func (c *Compiler) processPathChain(
 		targetAlreadyDeclared := c.declaredNodes[targetVar]
 		c.declaredNodes[targetVar] = true
 
-		if rel.MinHops != nil || rel.MaxHops != nil {
-			if err := c.processVarLenStep(prevNode, prevVar, rel, targetNode, targetVar, relVar, targetAlreadyDeclared, joinKeyword, optionalWhereExtra); err != nil {
+		if rel.MinHops != nil || rel.MaxHops != nil || path.IsShortestPath || path.IsAllShortestPaths {
+			if err := c.processVarLenStep(prevNode, prevVar, rel, targetNode, targetVar, relVar, targetAlreadyDeclared, joinKeyword, optionalWhereExtra, path.IsShortestPath, path.PathVariable); err != nil {
 				return err
 			}
 			prevNode = targetNode
 			prevVar = targetVar
 			continue
+		}
+
+		if path.PathVariable != "" {
+			c.varAliases[path.PathVariable] = relVar
 		}
 
 		escRel := c.escapeVar(relVar)
@@ -639,5 +654,94 @@ func (c *Compiler) assembleQuerySQL(
 		Offset:     offsetSQL,
 	}
 
-	return RenderQuery(model)
+	baseSQL := RenderQuery(model)
+	return c.appendUnions(baseSQL, c.query.Unions)
+}
+
+// processUnwinds compiles UNWIND clauses into relational unnest operations (json_each in SQLite, arrayJoin in ClickHouse).
+func (c *Compiler) processUnwinds(unwinds []ast.UnwindClause) error {
+	for _, u := range unwinds {
+		c.unwindVariables[u.Alias] = true
+		exprSQL, err := c.visitExpression(u.Expression)
+		if err != nil {
+			return err
+		}
+		escAlias := c.escapeVar(u.Alias)
+		isFirst := c.fromTable == ""
+		tbl, joinType := c.schema.Dialect.RenderUnwind(exprSQL, escAlias, isFirst)
+		if isFirst {
+			c.fromTable = tbl
+			c.fromAlias = escAlias
+		} else {
+			c.joins = append(c.joins, JoinModel{
+				Type:  joinType,
+				Table: tbl,
+				Alias: escAlias,
+				On:    "",
+			})
+		}
+	}
+	return nil
+}
+
+// processCalls compiles CALL { ... } subqueries in isolation and binds their returned aliases into subquery expressions.
+func (c *Compiler) processCalls(calls []ast.CallClause) error {
+	for _, call := range calls {
+		subCompiler := NewCompilerWithOptions(call.Subquery, c.initialParams, c.schema)
+		for node := range c.declaredNodes {
+			subCompiler.declaredNodes[node] = true
+		}
+		for rel := range c.declaredRels {
+			subCompiler.declaredRels[rel] = true
+		}
+		for k, v := range c.withAliases {
+			subCompiler.withAliases[k] = v
+		}
+		subCompiled, err := subCompiler.Compile()
+		if err != nil {
+			return err
+		}
+		for k, v := range subCompiled.Params {
+			c.params[k] = v
+		}
+		for _, item := range call.Subquery.Return.Items {
+			alias := item.Alias
+			if alias == "" {
+				if id, ok := item.Expression.(ast.IdentifierExpr); ok {
+					alias = id.Name
+				}
+			}
+			if alias != "" {
+				c.withAliases[alias] = "(" + subCompiled.SQL + ")"
+			}
+		}
+	}
+	return nil
+}
+
+// appendUnions compiles subsequent UNION and UNION ALL queries and appends them to baseSQL.
+func (c *Compiler) appendUnions(baseSQL string, unions []ast.UnionClause) string {
+	if len(unions) == 0 {
+		return baseSQL
+	}
+	var sb strings.Builder
+	sb.WriteString(baseSQL)
+	for _, u := range unions {
+		subCompiler := NewCompilerWithOptions(u.Query, c.initialParams, c.schema)
+		subCompiled, err := subCompiler.Compile()
+		if err != nil {
+			continue
+		}
+		for k, v := range subCompiled.Params {
+			c.params[k] = v
+		}
+		sb.WriteString("\n")
+		if u.IsAll {
+			sb.WriteString("UNION ALL\n")
+		} else {
+			sb.WriteString("UNION\n")
+		}
+		sb.WriteString(subCompiled.SQL)
+	}
+	return sb.String()
 }

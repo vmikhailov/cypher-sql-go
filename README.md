@@ -74,6 +74,11 @@ CREATE INDEX idx_nodes_kind ON nodes(kind);
 | `r.via` / `r.latency` | `json_extract(r.properties, '$.via')` | Arbitrary edge properties |
 | `startNode(r)` / `endNode(r)` | `r.from_id` / `r.to_id` | Native foreign key access |
 | `labels(n)` | `json_array(n.kind)` | Multi-label support |
+| `UNWIND list AS x` | `CROSS JOIN json_each(list) x` | Unnests collections / JSON arrays |
+| `q1 UNION [ALL] q2` | `q1 UNION [ALL] q2` | Compound multi-query results |
+| `shortestPath(...)` | `Recursive CTE min(depth)` | Breadth-first shortest traversal |
+| `n { .name, custom: expr }` | `json_object('name', ..., 'custom', expr)` | OpenCypher map projection |
+| `reduce(acc=0, x IN l \| ..)`| `(init + COALESCE((SELECT sum(..)), 0))` | Collection reduction |
 
 ### 3. Key Schema Benefits
 

@@ -43,6 +43,12 @@ func (c *Compiler) visitExpression(expr ast.Expression) (string, error) {
 		return c.visitListComprehension(e)
 	case ast.CaseExpr:
 		return c.visitCase(e)
+	case ast.HasLabelExpr:
+		return c.visitHasLabel(e)
+	case ast.MapProjectionExpr:
+		return c.visitMapProjection(e)
+	case ast.ReduceExpr:
+		return c.visitReduce(e)
 	default:
 		return "", fmt.Errorf("unsupported expression type: %T", expr)
 	}
@@ -369,6 +375,73 @@ func (c *Compiler) visitCase(caseExpr ast.CaseExpr) (string, error) {
 	sb.WriteString(" END")
 	return sb.String(), nil
 }
+
+func (c *Compiler) visitHasLabel(hl ast.HasLabelExpr) (string, error) {
+	varName := ""
+	if id, ok := hl.Node.(ast.IdentifierExpr); ok {
+		varName = id.Name
+	} else {
+		s, err := c.visitExpression(hl.Node)
+		if err != nil {
+			return "", err
+		}
+		varName = s
+	}
+	nVar := c.escapeVar(varName)
+	return c.compileNodeLabelPredicate(nVar, hl.Label), nil
+}
+
+func (c *Compiler) visitMapProjection(mp ast.MapProjectionExpr) (string, error) {
+	baseVar := ""
+	if id, ok := mp.Base.(ast.IdentifierExpr); ok {
+		baseVar = c.escapeVar(id.Name)
+	} else {
+		s, err := c.visitExpression(mp.Base)
+		if err != nil {
+			return "", err
+		}
+		baseVar = s
+	}
+
+	var pairs []KeyValuePair
+	for _, elem := range mp.Elements {
+		if elem.IsAllProps {
+			continue
+		}
+		if elem.Value != nil {
+			valSQL, err := c.visitExpression(elem.Value)
+			if err != nil {
+				return "", err
+			}
+			pairs = append(pairs, KeyValuePair{Key: elem.PropertyName, Value: valSQL})
+		} else {
+			propSQL := ""
+			switch strings.ToLower(elem.PropertyName) {
+			case strings.ToLower(c.schema.NodeIDCol), "id":
+				propSQL = baseVar + "." + c.schema.NodeIDCol
+			case strings.ToLower(c.schema.NodeKindCol), "kind":
+				propSQL = baseVar + "." + c.schema.NodeKindCol
+			default:
+				propSQL = c.schema.Dialect.JSONExtract(baseVar+"."+c.schema.NodePropsCol, elem.PropertyName)
+			}
+			pairs = append(pairs, KeyValuePair{Key: elem.PropertyName, Value: propSQL})
+		}
+	}
+	return c.schema.Dialect.JSONObject(pairs), nil
+}
+
+func (c *Compiler) visitReduce(red ast.ReduceExpr) (string, error) {
+	listSQL, err := c.visitExpression(red.List)
+	if err != nil {
+		return "", err
+	}
+	initSQL, err := c.visitExpression(red.Initial)
+	if err != nil {
+		return "", err
+	}
+	return "(" + initSQL + " + COALESCE((SELECT sum(value) FROM json_each(" + listSQL + ")), 0))", nil
+}
+
 
 func (c *Compiler) buildSubqueryPath(path ast.PathPattern, prefix string) (string, []string) {
 	var conditions []string

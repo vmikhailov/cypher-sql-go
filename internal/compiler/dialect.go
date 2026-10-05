@@ -38,6 +38,18 @@ type Dialect interface {
 
 	// InArray returns an expression testing if val is an element of array/list expr.
 	InArray(val, list string) string
+
+	// JSONObject returns an expression creating a JSON object or map from key-value pairs.
+	JSONObject(pairs []KeyValuePair) string
+
+	// RenderUnwind returns the table expression and join type for an UNWIND clause.
+	RenderUnwind(expr, alias string, isFirst bool) (table, joinType string)
+}
+
+// KeyValuePair represents a key-value mapping for object/map constructors.
+type KeyValuePair struct {
+	Key   string
+	Value string
 }
 
 // --- SQLite Dialect ---
@@ -98,6 +110,21 @@ func (d *sqliteDialect) RenderQuantifier(m *QuantifierModel) string {
 
 func (d *sqliteDialect) RenderListComprehension(m *ListCompModel) string {
 	return renderTemplate(listCompTemplate, m)
+}
+
+func (d *sqliteDialect) JSONObject(pairs []KeyValuePair) string {
+	var parts []string
+	for _, p := range pairs {
+		parts = append(parts, "'"+p.Key+"'", p.Value)
+	}
+	return "json_object(" + strings.Join(parts, ", ") + ")"
+}
+
+func (d *sqliteDialect) RenderUnwind(expr, alias string, isFirst bool) (table, joinType string) {
+	if isFirst {
+		return "json_each(" + expr + ")", ""
+	}
+	return "json_each(" + expr + ")", "CROSS JOIN"
 }
 
 // --- ClickHouse Dialect ---
@@ -195,4 +222,20 @@ func (d *clickhouseDialect) RenderListComprehension(m *ListCompModel) string {
 	return "(SELECT groupArray(" + m.Projection + ") FROM " +
 		"(SELECT arrayJoin(JSONExtract(" + m.List + ", 'Array(String)')) AS " +
 		m.Var + ")" + filterClause + ")"
+}
+
+func (d *clickhouseDialect) JSONObject(pairs []KeyValuePair) string {
+	var parts []string
+	for _, p := range pairs {
+		parts = append(parts, "'"+p.Key+"'", p.Value)
+	}
+	return "map(" + strings.Join(parts, ", ") + ")"
+}
+
+func (d *clickhouseDialect) RenderUnwind(expr, alias string, isFirst bool) (table, joinType string) {
+	subq := "(SELECT arrayJoin(" + expr + ") AS " + alias + ")"
+	if isFirst {
+		return subq, ""
+	}
+	return subq, "CROSS JOIN"
 }
