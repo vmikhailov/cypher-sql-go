@@ -340,7 +340,8 @@ func (c *Compiler) visitCase(caseExpr ast.CaseExpr) (string, error) {
 	if caseExpr.Test != nil {
 		tSQL, err := c.visitExpression(caseExpr.Test)
 		if err == nil {
-			sb.WriteString(" " + tSQL)
+			sb.WriteString(" ")
+			sb.WriteString(tSQL)
 		}
 	}
 	for _, branch := range caseExpr.WhenBranches {
@@ -352,14 +353,18 @@ func (c *Compiler) visitCase(caseExpr ast.CaseExpr) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		sb.WriteString(" WHEN " + wSQL + " THEN " + tSQL)
+		sb.WriteString(" WHEN ")
+		sb.WriteString(wSQL)
+		sb.WriteString(" THEN ")
+		sb.WriteString(tSQL)
 	}
 	if caseExpr.Else != nil {
 		eSQL, err := c.visitExpression(caseExpr.Else)
 		if err != nil {
 			return "", err
 		}
-		sb.WriteString(" ELSE " + eSQL)
+		sb.WriteString(" ELSE ")
+		sb.WriteString(eSQL)
 	}
 	sb.WriteString(" END")
 	return sb.String(), nil
@@ -376,7 +381,9 @@ func (c *Compiler) buildSubqueryPath(path ast.PathPattern, prefix string) (strin
 	if !headIsOuter {
 		c.varIndex++
 		actualHeadVar = prefix + "_h" + strconv.Itoa(c.varIndex)
-		fromJoins.WriteString(c.schema.NodesTable + " " + actualHeadVar)
+		fromJoins.WriteString(c.schema.NodesTable)
+		fromJoins.WriteString(" ")
+		fromJoins.WriteString(actualHeadVar)
 		c.addNodeFiltersToConditions(path.Head, actualHeadVar, &conditions)
 	}
 
@@ -395,18 +402,34 @@ func (c *Compiler) buildSubqueryPath(path ast.PathPattern, prefix string) (strin
 				actualTargetVar = prefix + "_t" + strconv.Itoa(c.varIndex)
 			}
 			if fromJoins.Len() == 0 {
-				fromJoins.WriteString(c.schema.EdgesTable + " " + relVar + " CROSS JOIN " +
-					c.schema.NodesTable + " " + actualTargetVar)
+				fromJoins.WriteString(c.schema.EdgesTable)
+				fromJoins.WriteString(" ")
+				fromJoins.WriteString(relVar)
+				fromJoins.WriteString(" CROSS JOIN ")
+				fromJoins.WriteString(c.schema.NodesTable)
+				fromJoins.WriteString(" ")
+				fromJoins.WriteString(actualTargetVar)
 			} else {
-				fromJoins.WriteString(" CROSS JOIN " + c.schema.EdgesTable + " " + relVar +
-					" CROSS JOIN " + c.schema.NodesTable + " " + actualTargetVar)
+				fromJoins.WriteString(" CROSS JOIN ")
+				fromJoins.WriteString(c.schema.EdgesTable)
+				fromJoins.WriteString(" ")
+				fromJoins.WriteString(relVar)
+				fromJoins.WriteString(" CROSS JOIN ")
+				fromJoins.WriteString(c.schema.NodesTable)
+				fromJoins.WriteString(" ")
+				fromJoins.WriteString(actualTargetVar)
 			}
 			c.addNodeFiltersToConditions(targetNode, actualTargetVar, &conditions)
 		} else {
 			if fromJoins.Len() == 0 {
-				fromJoins.WriteString(c.schema.EdgesTable + " " + relVar)
+				fromJoins.WriteString(c.schema.EdgesTable)
+				fromJoins.WriteString(" ")
+				fromJoins.WriteString(relVar)
 			} else {
-				fromJoins.WriteString(" CROSS JOIN " + c.schema.EdgesTable + " " + relVar)
+				fromJoins.WriteString(" CROSS JOIN ")
+				fromJoins.WriteString(c.schema.EdgesTable)
+				fromJoins.WriteString(" ")
+				fromJoins.WriteString(relVar)
 			}
 		}
 
