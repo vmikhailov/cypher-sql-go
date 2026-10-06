@@ -94,35 +94,28 @@ func printSummaryReport(results []BenchmarkQueryResult, sqlIngest, duckIngest In
 
 	oltpGeoMean := geometricMean(oltpScores)
 	olapGeoMean := geometricMean(olapScores)
-	overallQueryGeoMean := geometricMean(allScores)
 
 	fmt.Println("---------------------------------------------------------------------------------------------------------")
-	fmt.Println("                              SPLIT WORKLOAD METRICS (SPEC / LDBC STYLE)                                  ")
+	fmt.Println("                       SPLIT WORKLOAD METRICS: DUAL-USE EMBEDDED PROFILE (SPEC STYLE)                   ")
 	fmt.Println("---------------------------------------------------------------------------------------------------------")
-	fmt.Printf("  [1] TRANSACTIONAL / POINT LOOKUP INDEX (OLTP - 5 Queries): %8.1f pts (DuckDB: 100.0 pts) -> %.2fx SQLite\n",
+	fmt.Printf("  [1] INTERACTIVE UI & POINT LOOKUPS (OLTP - 5 Queries): %8.1f pts (DuckDB: 100.0 pts) -> %.2fx SQLite Faster\n",
 		oltpGeoMean, oltpGeoMean/100.0)
-	fmt.Printf("  [2] STRUCTURAL / ANALYTICAL INDEX       (OLAP - 5 Queries): %8.1f pts (DuckDB: 100.0 pts) -> ",
+	fmt.Printf("  [2] WHOLE-GRAPH STRUCTURAL ANALYSIS (OLAP - 5 Queries): %8.1f pts (DuckDB: 100.0 pts) -> ",
 		olapGeoMean)
 	if olapGeoMean >= 100.0 {
-		fmt.Printf("%.2fx SQLite\n", olapGeoMean/100.0)
+		fmt.Printf("%.2fx SQLite Faster\n", olapGeoMean/100.0)
 	} else {
-		fmt.Printf("%.2fx DuckDB\n", 100.0/olapGeoMean)
+		fmt.Printf("%.2fx DuckDB Faster\n", 100.0/olapGeoMean)
 	}
 
-	fmt.Printf("  [3] BALANCED QUERY INDEX (Geometric Mean All 10):          %8.1f pts (DuckDB: 100.0 pts)\n",
-		overallQueryGeoMean)
-
-	compositeScores := append([]float64{}, allScores...)
 	if hadIngest {
-		compositeScores = append(compositeScores, sqlIngest.Score)
-		fmt.Printf("  [4] BULK INGESTION INDEX (Total Loading Time):             %8.1f pts (DuckDB: 100.0 pts) -> %.2fx DuckDB\n",
+		fmt.Printf("  [3] BULK INGESTION INDEX (Total Loading Time):         %8.1f pts (DuckDB: 100.0 pts) -> %.2fx DuckDB Faster\n",
 			sqlIngest.Score, 100.0/sqlIngest.Score)
 	}
-
-	finalComposite := geometricMean(compositeScores)
-	fmt.Printf("  =======================================================================================================\n")
-	fmt.Printf("  ★ OVERALL COMPOSITE BENCHMARK SCORE:                       %8.1f pts (DuckDB: 100.0 pts)\n", finalComposite)
-	fmt.Printf("  =======================================================================================================\n\n")
+	fmt.Println("---------------------------------------------------------------------------------------------------------")
+	fmt.Println("  NOTE: No single composite score is reported to avoid workload selection bias.")
+	fmt.Println("        Embedded engines serve both interactive UI lookups and whole-graph structural analysis.")
+	fmt.Println("---------------------------------------------------------------------------------------------------------\n")
 }
 
 func writeMarkdownReport(filePath string, sqlIngest, duckIngest IngestResult, results []BenchmarkQueryResult, iterations int, hadIngest bool) error {
@@ -145,16 +138,9 @@ func writeMarkdownReport(filePath string, sqlIngest, duckIngest IngestResult, re
 
 	oltpGeoMean := geometricMean(oltpScores)
 	olapGeoMean := geometricMean(olapScores)
-	overallQueryGeoMean := geometricMean(allScores)
 
 	oltpExecGeoMean := geometricMean(oltpExecScores)
 	olapExecGeoMean := geometricMean(olapExecScores)
-
-	compositeScores := append([]float64{}, allScores...)
-	if hadIngest {
-		compositeScores = append(compositeScores, sqlIngest.Score)
-	}
-	finalComposite := geometricMean(compositeScores)
 
 	sb.WriteString("# Comprehensive Performance Benchmark: `cypher-sql-go` (Hybrid SQL) vs. DuckDB + DuckPGQ (Native Columnar)\n\n")
 	sb.WriteString(fmt.Sprintf("**Date**: %s  \n", time.Now().Format("2006-01-02 15:04:05")))
@@ -170,27 +156,28 @@ func writeMarkdownReport(filePath string, sqlIngest, duckIngest IngestResult, re
 
 	sb.WriteString("## 1. Split Workload Benchmark Summary (SPEC / LDBC Style)\n\n")
 	sb.WriteString("> Standardized SPEC/Geekbench-style normalized scoring where **DuckDB + DuckPGQ Baseline = 100.0 points**.\n")
-	sb.WriteString("> Scores > 100 indicate speedup over DuckDB; scores < 100 indicate slower execution.\n\n")
+	sb.WriteString("> To prevent workload selection bias, scores are split into two independent indices reflecting the real-world dual role of embedded engines:\n")
+	sb.WriteString("> 1. **Interactive UI & Point Lookups (OLTP)**: Symbol navigation, direct caller checks, interactive UI inspection.\n")
+	sb.WriteString("> 2. **Whole-Graph Local Analysis (OLAP)**: Circular dependency detection, impact radius calculation, dead code path counts.\n\n")
 
-	sb.WriteString("| Workload Dimension | `cypher-sql-go` (SQLite) | DuckDB + DuckPGQ Baseline | Speedup / Winner |\n")
-	sb.WriteString("| :--- | :---: | :---: | :--- |\n")
-	sb.WriteString(fmt.Sprintf("| **[OLTP] Transactional / Localized Traversal Index** | **%.1f pts** | 100.0 pts | **%.2fx SQLite Faster** |\n",
+	sb.WriteString("| Workload Dimension | Embedded Use Case | `cypher-sql-go` (SQLite) | DuckDB + DuckPGQ Baseline | Architectural Advantage |\n")
+	sb.WriteString("| :--- | :--- | :---: | :---: | :--- |\n")
+	sb.WriteString(fmt.Sprintf("| **[OLTP] Interactive UI & Point Lookups** | Direct callers, symbol lookups, UI inspection (`LIMIT`, point seeks) | **%.1f pts** | 100.0 pts | **%.2fx SQLite Faster** |\n",
 		oltpGeoMean, oltpGeoMean/100.0))
 	if olapGeoMean >= 100.0 {
-		sb.WriteString(fmt.Sprintf("| **[OLAP] Structural / Analytical Traversal Index** | **%.1f pts** | 100.0 pts | **%.2fx SQLite Faster** |\n",
+		sb.WriteString(fmt.Sprintf("| **[OLAP] Whole-Graph Structural Analysis** | Circular dependencies, impact radius, dead paths (unconstrained, deep paths) | **%.1f pts** | 100.0 pts | **%.2fx SQLite Faster** |\n",
 			olapGeoMean, olapGeoMean/100.0))
 	} else {
-		sb.WriteString(fmt.Sprintf("| **[OLAP] Structural / Analytical Traversal Index** | **%.1f pts** | 100.0 pts | **%.2fx DuckDB Faster** |\n",
+		sb.WriteString(fmt.Sprintf("| **[OLAP] Whole-Graph Structural Analysis** | Circular dependencies, impact radius, dead paths (unconstrained, deep paths) | **%.1f pts** | 100.0 pts | **%.2fx DuckDB Faster** |\n",
 			olapGeoMean, 100.0/olapGeoMean))
 	}
-	sb.WriteString(fmt.Sprintf("| **Overall Balanced Query Index (10 Queries)** | **%.1f pts** | 100.0 pts | **%.2fx Balanced Speedup** |\n",
-		overallQueryGeoMean, overallQueryGeoMean/100.0))
 	if hadIngest {
-		sb.WriteString(fmt.Sprintf("| **Bulk Ingestion Index (Total Time)** | **%.1f pts** | 100.0 pts | **%.2fx DuckDB Faster** |\n",
+		sb.WriteString(fmt.Sprintf("| **Bulk Data Ingestion (298k Entities)** | Initial database population from CSV/raw data | **%.1f pts** | 100.0 pts | **%.2fx DuckDB Faster** |\n",
 			sqlIngest.Score, 100.0/sqlIngest.Score))
+		sb.WriteString(fmt.Sprintf("| **Storage Footprint on Disk** | Local disk usage footprint | **%.2f MB** | **%.2f MB** | **%.2fx %s Smaller** |\n\n",
+			sqlIngest.DbSizeMb, duckIngest.DbSizeMb,
+			speedRatio(sqlIngest.DbSizeMb, duckIngest.DbSizeMb), sizeWinner(sqlIngest.DbSizeMb, duckIngest.DbSizeMb)))
 	}
-	sb.WriteString(fmt.Sprintf("| **FINAL COMPOSITE BENCHMARK SCORE** | **%.1f pts** | **100.0 pts** | **%.2fx OVERALL INDEX** |\n\n",
-		finalComposite, finalComposite/100.0))
 
 	sb.WriteString("### Execution-Only vs. End-to-End Latency Breakdown\n")
 	sb.WriteString("To isolate database compute from Go runtime AST transpilation, both comparisons are tracked:\n")

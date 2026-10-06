@@ -282,15 +282,18 @@ All performance evaluations follow our standardized **[Unified Benchmark Methodo
 
 ### Split Workload Benchmark Summary (SPEC / LDBC Style)
 
-Normalized scoring against native C/C++ embedded baselines (**Target Engine Baseline = 100.0 pts**, Geometric Mean):
+Embedded graph databases serve two fundamentally distinct operational profiles in real applications:
+1. **Interactive UI & Point Lookups (OLTP)**: Direct caller inspection, symbol resolution, and interactive drill-downs (`LIMIT 20` or single-point seeks).
+2. **Whole-Graph Local Analysis (OLAP)**: Circular dependency detection across repos, impact radius / blast radius calculation, and dead-code detection.
 
-| Workload Dimension | `cypher-sql-go` (SQLite) vs. LadybugDB v0.21.2 | `cypher-sql-go` (SQLite) vs. DuckDB v1.2.2 + DuckPGQ | Architectural Rationale |
-| :--- | :---: | :---: | :--- |
-| **[OLTP] Transactional / Localized Traversal Index** | **705.8 pts** (**7.06x SQLite**) | **487.7 pts** (**4.88x SQLite**) | Zero vectorization setup, instant B-Tree seeks, low-overhead tuple pipeline |
-| **[OLAP] Structural / Analytical Traversal Index** | **60.4 pts** (1.65x LadybugDB) | **35.3 pts** (2.83x DuckDB) | CSR edge list compression, columnar SIMD scans, multi-core morsels |
-| **Overall Balanced Query Index (10 Queries)** | **206.5 pts** (**2.07x SQLite**) | **131.3 pts** (**1.31x SQLite**) | Balanced composite across all 10 query archetypes |
-| **Bulk Data Ingestion (298k Entities)** | **37.2 pts** (2.69x LadybugDB) | **13.3 pts** (7.54x DuckDB) | Vectorized columnar CSV parsers (`read_csv_auto`) vs. row-by-row SQL |
-| **On-Disk Database Footprint** | 34.0 MB vs 22.4 MB (LadybugDB) | 34.0 MB vs 5.5 MB (DuckDB) | DuckDB bit-packing & dictionary compression |
+To prevent selection bias, benchmarks **explicitly avoid a single composite "overall score"**, reporting both indices independently (Normalized against native C/C++ baselines, **Target Engine = 100.0 pts**, Geometric Mean):
+
+| Workload Dimension | Embedded Use Case | `cypher-sql-go` (SQLite) vs. LadybugDB | `cypher-sql-go` (SQLite) vs. DuckDB + PGQ | Architectural Trade-Off |
+| :--- | :--- | :---: | :---: | :--- |
+| **[OLTP] Interactive UI & Point Lookups** | Symbol navigation, direct callers, UI inspection (`LIMIT`, point seeks) | **705.8 pts** (**7.06x SQLite**) | **487.7 pts** (**4.88x SQLite**) | Zero vectorization setup, instant B-Tree seeks, low-overhead tuple pipeline |
+| **[OLAP] Whole-Graph Structural Analysis** | Circular dependencies, impact radius, dead paths (unconstrained, deep paths) | **60.4 pts** (1.65x LadybugDB) | **35.3 pts** (2.83x DuckDB) | CSR edge list compression, columnar SIMD scans, multi-core morsels |
+| **Bulk Data Ingestion (298k Entities)** | Initial database population from CSV/raw data | **37.2 pts** (2.69x LadybugDB) | **13.3 pts** (7.54x DuckDB) | Vectorized columnar CSV parsers (`read_csv_auto`) vs. row-by-row SQL |
+| **On-Disk Database Footprint** | Local storage usage footprint | 34.0 MB vs 22.4 MB (LadybugDB) | 34.0 MB vs 5.5 MB (DuckDB) | DuckDB bit-packing & dictionary compression |
 
 #### Query Latency Highlights (Warmed Iterations)
 

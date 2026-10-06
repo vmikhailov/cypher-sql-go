@@ -12,6 +12,27 @@ To ensure all benchmarks are technically sound, objective, reproducible, and res
 2. **Transparent Environment & Cache Residency**: Benchmark disclosures must clearly articulate hardware configuration, dataset sizing, memory footprint, and whether the workload is operating in-cache or bound by storage I/O.
 3. **Mathematical Rigor (SPEC / LDBC Style)**: Score normalization, percentile tracking, and composite indices must follow established industry standards (such as SPEC CPU/Cloud and LDBC Graphalytics), using **Geometric Means** for normalized scores to avoid arithmetic skew.
 
+### Eliminating Workload Selection Bias in Embedded Graph Engines
+
+In real-world embedded deployments (developer tooling, language servers, desktop IDEs, local agent systems, and microservices), embedded graph databases are called upon to perform two fundamentally different classes of operations:
+
+1. **Interactive UI / Symbol Lookups (OLTP)**:
+   - *"Show me this node's direct callers"* (e.g., `LIMIT 20` or single-point seek).
+   - *"Resolve this symbol definition or permissions trail"*.
+   - *Requirement*: Microsecond response latency; user experiences sub-millisecond interactivity.
+2. **Whole-Graph Local Analysis (OLAP)**:
+   - *"Find circular dependencies across the entire repository"*.
+   - *"Compute blast radius and impact analysis for a refactoring"*.
+   - *"Count all dead code paths and unreferenced entities"*.
+   - *Requirement*: High-throughput edge scanning, unconstrained joins, and deep recursive path traversal.
+
+> [!WARNING]
+> **Why Single "Overall Winner" Claims are Rigged**:
+> If a benchmark only evaluates queries with small `LIMIT` clauses and single-node anchors, it is rigged by selection bias in favor of row B-Tree engines (like SQLite), which excel at tuple-at-a-time early termination without analytical vector setup.
+> Conversely, if a benchmark only evaluates unbounded multi-table aggregations, it is rigged in favor of vectorized columnar/CSR engines (like LadybugDB or DuckDB).
+> 
+> To maintain technical integrity, **we explicitly reject a single "Overall Winner" composite score**. Instead, we report two independent, unblended indices that reflect the dual reality of embedded workloads.
+
 ---
 
 ## 2. Test Environment & Cache Residency Disclosure
@@ -62,21 +83,21 @@ In accordance with TPC (TPC-C vs. TPC-H) and LDBC guidelines, benchmarks partiti
    └───────────────────────────┘                                 └───────────────────────────┘
 ```
 
-### Suite A: Transactional / Localized Workload (OLTP)
-Represents low-latency operational workloads typical of microservices, permissions checking, and interactive graph exploration:
+### Suite A: Interactive UI & Point Lookups (OLTP)
+Represents low-latency operational queries typical of interactive UI navigation, IDE symbol resolution ("show me this node's direct callers"), permission checks, and localized inspection:
 - **Q1 (Exact Point Lookup)**: Indexed point lookup of a single entity by primary key (`MATCH (s:Service {name: 'service_420'}) ...`). Tests B-Tree seek latency vs. columnar dictionary lookups.
 - **Q2 (Filtered Property Scan with Early Exit)**: Table scan with early termination (`LIMIT 50`). Evaluates tuple-at-a-time streaming vs. vectorized batch overhead.
-- **Q3 (Localized 1-Hop Traversal)**: 1-hop relationship traversal with aggregation and `LIMIT 20` (`(s:Service)-[:USES_DB]->(d:Database)`). Tests indexed edge seeks.
-- **Q4 (Localized 2-Hop Traversal)**: 2-hop multi-join traversal with `LIMIT 50` (`(s1)-[:CALLS]->(s2)-[:USES_DB]->(d)`). Evaluates join setup latency and early pipeline exit.
-- **Q5 (Localized Hierarchy Traversal)**: Targeted 2-level hierarchy traversal (`(s:Service)-[:CONTAINS]->(c:Class)-[:CONTAINS]->(m:Method)` with `LIMIT 10`).
+- **Q3 (Localized 1-Hop Traversal)**: 1-hop relationship traversal with aggregation and `LIMIT 20` (`(s:Service)-[:USES_DB]->(d:Database)`). Tests indexed edge seeks for direct dependencies.
+- **Q4 (Localized 2-Hop Traversal)**: 2-hop multi-join traversal with `LIMIT 50` (`(s1)-[:CALLS]->(s2)-[:USES_DB]->(d)`). Evaluates join setup latency and early pipeline exit for local call chains.
+- **Q5 (Localized Hierarchy Traversal)**: Targeted 2-level hierarchy traversal (`(s:Service)-[:CONTAINS]->(c:Class)-[:CONTAINS]->(m:Method)` with `LIMIT 10`). Evaluates class/method tree drill-down in IDEs.
 
-### Suite B: Structural / Analytical Workload (OLAP)
-Represents global graph analytics, unconstrained traversals, and offline reporting:
-- **Q6 (Unconstrained 2-Hop Full Join)**: Global multi-hop join across the entire graph (`MATCH (s1:Service)-[:CALLS]->(s2:Service)-[:USES_DB]->(d:Database) RETURN count(*)`). Computes 15,000+ paths with no early exit. Tests join throughput.
-- **Q7 (Deep Path Expansion $k=1..5$)**: Recursive variable-length path traversal with cycle prevention (`MATCH (s:Service {name: 'service_10'})-[:CALLS*1..5]->(target:Service) RETURN count(DISTINCT target.name)`). Tests recursive SQL CTEs vs. native graph CSR path expansion.
+### Suite B: Whole-Graph Structural Analysis (OLAP)
+Represents heavy structural graph analysis typical of dependency audits ("find circular dependencies across the repo"), impact/blast-radius calculation, dead-code detection, and global aggregations:
+- **Q6 (Unconstrained 2-Hop Full Join)**: Global multi-hop join across the entire graph (`MATCH (s1:Service)-[:CALLS]->(s2:Service)-[:USES_DB]->(d:Database) RETURN count(*)`). Computes 15,000+ paths with no early exit. Tests join throughput for whole-graph architecture verification.
+- **Q7 (Deep Path Expansion $k=1..5$)**: Recursive variable-length path traversal with cycle prevention (`MATCH (s:Service {name: 'service_10'})-[:CALLS*1..5]->(target:Service) RETURN count(DISTINCT target.name)`). Tests recursive SQL CTEs vs. native graph CSR path expansion for blast radius / impact analysis.
 - **Q8 (Global Property Filter Aggregation)**: Full table scan across 100,000 nodes on an unindexed property with global aggregation (`MATCH (s:Service) WHERE s.framework = 'express' RETURN count(s)`). Tests raw scanning throughput and JSON/column extraction.
-- **Q9 (Global Topology Edge Aggregation)**: Full edge scan without node anchors (`MATCH (a:Service)-[r:CALLS]->(b:Service) RETURN count(r)`). Tests raw edge table scan speed.
-- **Q10 (High Fan-Out Degree Centrality)**: Global relationship scan with full graph `GROUP BY` and `ORDER BY` (`MATCH (n:Service)-[r:CALLS]->() RETURN n.name, count(r) AS degree ORDER BY degree DESC LIMIT 10`). Tests global hash aggregation and sorting.
+- **Q9 (Global Topology Edge Aggregation)**: Full edge scan without node anchors (`MATCH (a:Service)-[r:CALLS]->(b:Service) RETURN count(r)`). Tests raw edge table scan speed for global graph metrics.
+- **Q10 (High Fan-Out Degree Centrality)**: Global relationship scan with full graph `GROUP BY` and `ORDER BY` (`MATCH (n:Service)-[r:CALLS]->() RETURN n.name, count(r) AS degree ORDER BY degree DESC LIMIT 10`). Tests global centrality and bottleneck detection.
 
 ---
 
@@ -143,16 +164,19 @@ $$\text{GeoMean}(S_1, S_2, \dots, S_n) = \exp\left( \frac{1}{n} \sum_{i=1}^{n} \
 
 ### Defined Benchmark Indices
 
-1. **Transactional / Point Lookup Index (OLTP)**:
+1. **Interactive UI & Point Lookup Index (OLTP)**:
    $$\text{Index}_{\text{OLTP}} = \left( \prod_{i=1}^{5} \text{Score}_i \right)^{1/5}$$
-2. **Structural / Analytical Traversal Index (OLAP)**:
+   Measures responsiveness on low-latency, user-facing, and bounded interactive queries.
+2. **Whole-Graph Structural Analysis Index (OLAP)**:
    $$\text{Index}_{\text{OLAP}} = \left( \prod_{i=6}^{10} \text{Score}_i \right)^{1/5}$$
-3. **Balanced Query Index (Overall 10 Queries)**:
-   $$\text{Index}_{\text{Query}} = \left( \prod_{i=1}^{10} \text{Score}_i \right)^{1/10}$$
-4. **Bulk Ingestion Index**:
+   Measures throughput on unconstrained joins, deep paths, and whole-graph topological scans.
+3. **Bulk Ingestion Index**:
    $$\text{Index}_{\text{Ingest}} = \text{Score}_{\text{Ingest}}$$
-5. **Final Composite Benchmark Score**:
-   $$\text{Score}_{\text{Composite}} = \left( \text{Index}_{\text{Ingest}} \times \prod_{i=1}^{10} \text{Score}_i \right)^{1/11}$$
+   Measures initial bulk loading throughput (nodes, edges, indices).
+
+> [!NOTE]
+> **Why No Single "Overall Winner" Score?**
+> A single monolithic score that averages point lookups with global joins creates false claims. A 10x win on a 0.06 ms point lookup mathematically distorts an average even if the engine is 3x slower on a 25 ms full-graph join. By reporting the indices independently, database engineers and software architects can evaluate each engine according to their application's dominant query profile.
 
 ---
 

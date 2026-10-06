@@ -14,15 +14,16 @@
 ## 1. Split Workload Benchmark Summary (SPEC / LDBC Style)
 
 > Standardized SPEC/Geekbench-style normalized scoring where **LadybugDB Baseline = 100.0 points**.
-> Scores > 100 indicate speedup over LadybugDB; scores < 100 indicate slower execution.
+> To prevent workload selection bias, scores are split into two independent indices reflecting the real-world dual role of embedded engines:
+> 1. **Interactive UI & Point Lookups (OLTP)**: Symbol navigation, direct caller inspection, interactive UI drill-down.
+> 2. **Whole-Graph Local Analysis (OLAP)**: Circular dependency detection, impact radius calculation, dead code path counts.
 
-| Workload Dimension | `cypher-sql-go` (SQLite) | LadybugDB Baseline | Speedup / Winner |
-| :--- | :---: | :---: | :--- |
-| **[OLTP] Transactional / Localized Traversal Index** | **705.8 pts** | 100.0 pts | **7.06x SQLite Faster** |
-| **[OLAP] Structural / Analytical Traversal Index** | **60.4 pts** | 100.0 pts | **1.65x Ladybug Faster** |
-| **Overall Balanced Query Index (10 Queries)** | **206.5 pts** | 100.0 pts | **2.07x Balanced Speedup** |
-| **Bulk Ingestion Index (Total Time)** | **37.2 pts** | 100.0 pts | **2.69x Ladybug Faster** |
-| **FINAL COMPOSITE BENCHMARK SCORE** | **176.8 pts** | **100.0 pts** | **1.77x OVERALL INDEX** |
+| Workload Dimension | Embedded Use Case | `cypher-sql-go` (SQLite) | LadybugDB Baseline | Architectural Advantage |
+| :--- | :--- | :---: | :---: | :--- |
+| **[OLTP] Interactive UI & Point Lookups** | Direct callers, symbol lookups, UI inspection (`LIMIT`, point seeks) | **705.8 pts** | 100.0 pts | **7.06x SQLite Faster** |
+| **[OLAP] Whole-Graph Structural Analysis** | Circular dependencies, impact radius, dead paths (unconstrained, deep paths) | **60.4 pts** | 100.0 pts | **1.65x LadybugDB Faster** |
+| **Bulk Data Ingestion (298k Entities)** | Initial database population from CSV/raw data | **37.2 pts** | 100.0 pts | **2.69x LadybugDB Faster** |
+| **Storage Footprint on Disk** | Local disk usage footprint | **34.00 MB** | **22.36 MB** | **1.52x LadybugDB Smaller** |
 
 ### Execution-Only vs. End-to-End Latency Breakdown
 To isolate database compute from Go runtime AST transpilation, both comparisons are tracked:
