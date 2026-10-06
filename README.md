@@ -14,7 +14,7 @@ read-only safety for AI agents, in-process execution.**
 > ### ⚡ Performance Benchmark: `cypher-sql-go` (SQLite) vs. LadybugDB (Native C++)
 > In head-to-head benchmarking on **100,000 Nodes and 198,000 Relationships**, `cypher-sql-go` + SQLite achieved a **Composite Benchmark Score of 404.7 pts vs. LadybugDB's 100.0 pts (4.05x faster overall)**, winning 7/7 query patterns (up to 29.8x faster on multi-hop traversals).
 >
-> 📊 **[Read the Comprehensive Benchmark & Methodology Report (BENCHMARK_LADYBUG.md) →](BENCHMARK_LADYBUG.md)**
+> 📊 **[Read the Comprehensive Benchmark & Methodology Report (bench/ladybug/README.md) →](bench/ladybug/README.md)**
 
 ---
 
@@ -296,7 +296,7 @@ In-process head-to-head benchmark on **100,000 Nodes and 198,000 Relationships (
 | **Q7: 2-Tier Hierarchy (S->C->M)** | 43.69 µs | **0.543 ms** | 16.190 ms | **29.82x SQLite Faster** |
 
 > 📖 **Full Analysis**: For complete execution plans, statistical percentiles (p50/p95/p99), and architectural findings:  
-> 👉 **[Read the Full Benchmark & Methodology Report (BENCHMARK_LADYBUG.md)](BENCHMARK_LADYBUG.md)**
+> 👉 **[Read the Full Benchmark & Methodology Report (bench/ladybug/README.md)](bench/ladybug/README.md)**
 
 #### Reproduce the Benchmark
 ```bash

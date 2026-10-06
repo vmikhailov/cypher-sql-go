@@ -47,6 +47,16 @@ func resolveLbugPath(userPath string, dataDir string) string {
 	return filepath.Join(dataDir, "ladybug_100k.lbug")
 }
 
+func resolveReportPath(userPath string) string {
+	if userPath != "" && userPath != "bench/ladybug/REPORT.md" && userPath != "ladybug_perf_comparison.md" {
+		return userPath
+	}
+	if fi, err := os.Stat("bench/ladybug"); err == nil && fi.IsDir() {
+		return "bench/ladybug/REPORT.md"
+	}
+	return "REPORT.md"
+}
+
 func main() {
 	var (
 		iterations   int
@@ -68,11 +78,12 @@ func main() {
 	flag.StringVar(&binDir, "bin", "bin", "Directory containing LadybugDB binaries and DLLs")
 	flag.BoolVar(&forceIngest, "reingest", false, "Force re-ingestion of LadybugDB dataset")
 	flag.BoolVar(&benchIngest, "bench-ingest", true, "Run bulk ingestion benchmark comparing SQLite SQL vs LadybugDB")
-	flag.StringVar(&reportPath, "report", "ladybug_perf_comparison.md", "Output markdown report path")
+	flag.StringVar(&reportPath, "report", "bench/ladybug/REPORT.md", "Output markdown report path")
 	flag.Parse()
 
 	dataDir = resolveDataDir(dataDir)
 	lbugDbPath = resolveLbugPath(lbugDbPath, dataDir)
+	reportPath = resolveReportPath(reportPath)
 
 	fmt.Println("==========================================================================")
 	fmt.Println("  PERFORMANCE BENCHMARK: cypher-sql-go (SQLite) vs LadybugDB (Native C++)")
