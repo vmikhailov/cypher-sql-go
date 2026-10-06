@@ -286,11 +286,12 @@ In production embedded software, databases serve queries continuously across mil
 
 | Workload Dimension | Operational Weight | `cypher-sql-go` (SQLite) vs. LadybugDB | `cypher-sql-go` (SQLite) vs. DuckDB + PGQ | Architectural Trade-Off |
 | :--- | :---: | :---: | :---: | :--- |
-| **Interactive UI & Point Lookups (OLTP)** | **45%** | **705.8 pts** (**7.06x SQLite**) | **487.7 pts** (**4.88x SQLite**) | Zero vectorization setup, instant B-Tree seeks, low-overhead tuple pipeline |
-| **Whole-Graph Structural Analysis (OLAP)** | **45%** | **60.4 pts** (1.65x LadybugDB) | **35.3 pts** (2.83x DuckDB) | CSR edge list compression, columnar SIMD scans, multi-core morsels |
-| **Bulk Data Ingestion (298k Entities)** | **10%** | **37.2 pts** (2.69x LadybugDB) | **13.3 pts** (7.54x DuckDB) | Vectorized columnar CSV parsers (`read_csv_auto`) vs. row-by-row SQL |
-| **WEIGHTED COMPOSITE BENCHMARK SCORE** | **100%** | **173.7 pts** (**1.74x OVERALL**) | **104.3 pts** (**1.04x OVERALL**) | **Realistic operational composite (45% OLTP + 45% OLAP + 10% Ingest = 100%)** |
-| **On-Disk Database Footprint** | - | 34.0 MB vs 22.4 MB (LadybugDB) | 34.0 MB vs 5.5 MB (DuckDB) | DuckDB bit-packing & dictionary compression |
+| **Interactive UI & Point Lookups (OLTP)** | **45%** | **718.2 pts** (**7.18x SQLite**) | **486.2 pts** (**4.86x SQLite**) | Zero vectorization setup, instant B-Tree seeks, low-overhead tuple pipeline |
+| **Whole-Graph Structural Analysis (OLAP)** | **45%** | **56.2 pts** (1.78x LadybugDB) | **34.3 pts** (2.92x DuckDB) | CSR edge list compression, columnar SIMD scans, multi-core morsels |
+| **Bulk Data Ingestion (298k Entities)** | **10%** | **36.6 pts** (2.73x LadybugDB) | **14.4 pts** (6.94x DuckDB) | Vectorized columnar CSV parsers (`read_csv_auto`) vs. row-by-row SQL |
+| **WEIGHTED COMPOSITE BENCHMARK SCORE** | **100%** | **169.5 pts** (**1.70x OVERALL**) | **103.6 pts** (**1.04x OVERALL**) | **Realistic operational composite (45% OLTP + 45% OLAP + 10% Ingest = 100%)** |
+
+> 💾 **Storage Footprint**: SQLite 34.0 MB vs. LadybugDB 22.4 MB (1.52x smaller) vs. DuckDB 5.5 MB (6.17x smaller via bit-packing & dictionary compression).
 
 #### Query Latency Highlights (Warmed Iterations)
 

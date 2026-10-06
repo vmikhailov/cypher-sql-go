@@ -1,6 +1,6 @@
 # Comprehensive Performance Benchmark: `cypher-sql-go` (Hybrid SQL) vs. DuckDB + DuckPGQ (Native Columnar)
 
-**Date**: 2026-10-06 14:23:58  
+**Date**: 2026-10-06 14:58:46  
 **Platform**: windows amd64, Go go1.26.3, DuckDB v1.2.2 + DuckPGQ (in-process C-ABI)  
 **Dataset**: 100,000 Nodes, 198,000 Relationships (298,000 Graph Entities)  
 **Workload Diversity**: 10 Queries (5 Transactional/OLTP + 5 Analytical/OLAP), 25 Warmed Iterations each  
@@ -18,16 +18,15 @@
 
 | Workload Dimension | Operational Weight | Embedded Use Case | `cypher-sql-go` (SQLite) | DuckDB + DuckPGQ Baseline | Architectural Advantage |
 | :--- | :---: | :--- | :---: | :---: | :--- |
-| **Interactive UI & Point Lookups (OLTP)** | **45%** | Direct callers, symbol lookups, UI inspection (`LIMIT`, point seeks) | **487.7 pts** | 100.0 pts | **4.88x SQLite Faster** |
-| **Whole-Graph Structural Analysis (OLAP)** | **45%** | Circular dependencies, impact radius, dead paths (unconstrained, deep paths) | **35.3 pts** | 100.0 pts | **2.83x DuckDB Faster** |
-| **Bulk Data Ingestion (298k Entities)** | **10%** | Infrequent initial database population from CSV/raw data | **13.3 pts** | 100.0 pts | **7.54x DuckDB Faster** |
-| **WEIGHTED COMPOSITE BENCHMARK SCORE** | **100%** | **Realistic operational composite (45% OLTP + 45% OLAP + 10% Ingest = 100%)** | **104.3 pts** | **100.0 pts** | **1.04x OVERALL INDEX** |
-| **Storage Footprint on Disk** | - | Local disk usage footprint | **34.00 MB** | **5.51 MB** | **6.17x DuckDB Smaller** |
+| **Interactive UI & Point Lookups (OLTP)** | **45%** | Direct callers, symbol lookups, UI inspection (`LIMIT`, point seeks) | **486.2 pts** | 100.0 pts | **4.86x SQLite Faster** |
+| **Whole-Graph Structural Analysis (OLAP)** | **45%** | Circular dependencies, impact radius, dead paths (unconstrained, deep paths) | **34.3 pts** | 100.0 pts | **2.92x DuckDB Faster** |
+| **Bulk Data Ingestion (298k Entities)** | **10%** | Infrequent initial database population from CSV/raw data | **14.4 pts** | **100.0 pts** | **6.94x DuckDB Faster** |
+| **WEIGHTED COMPOSITE BENCHMARK SCORE** | **100%** | **Realistic operational composite (45% OLTP + 45% OLAP + 10% Ingest = 100%)** | **103.6 pts** | **100.0 pts** | **1.04x OVERALL INDEX** |
 
 ### Execution-Only vs. End-to-End Latency Breakdown
 To isolate database compute from Go runtime AST transpilation, both comparisons are tracked:
-- **OLTP Execution-Only (Precompiled SQLite vs. Prepared DuckDB)**: `270.1 pts` (2.70x SQLite)
-- **OLAP Execution-Only (Precompiled SQLite vs. Prepared DuckDB)**: `24.4 pts` (4.10x DuckDB)
+- **OLTP Execution-Only (Precompiled SQLite vs. Prepared DuckDB)**: `324.4 pts` (3.24x SQLite)
+- **OLAP Execution-Only (Precompiled SQLite vs. Prepared DuckDB)**: `24.5 pts` (4.08x DuckDB)
 
 ---
 
@@ -37,10 +36,10 @@ To isolate database compute from Go runtime AST transpilation, both comparisons 
 | :--- | :---: | :---: | :---: | :--- |
 | **Nodes Ingested** | 100000 nodes | 100000 nodes | - | Exact Match (✓ Parity) |
 | **Relationships Ingested** | 198000 edges | 198000 edges | - | Exact Match (✓ Parity) |
-| **Node Ingestion Time** | 1129.96 ms (88499 nodes/s) | 167.44 ms (597217 nodes/s) | 14.8 pts | **6.75x DuckDB** |
-| **Relationship Ingestion Time** | 1175.53 ms (168435 edges/s) | 189.24 ms (1046292 edges/s) | 16.1 pts | **6.21x DuckDB** |
-| **Index / Schema Creation** | 510.51 ms | 14.23 ms | - | SQLite builds 3 B-Trees |
-| **Total End-to-End Loading** | **2817.01 ms** (105786 entities/s) | **373.47 ms** (797926 entities/s) | **13.3 pts** | **7.54x DuckDB** |
+| **Node Ingestion Time** | 1110.27 ms (90068 nodes/s) | 178.53 ms (560133 nodes/s) | 16.1 pts | **6.22x DuckDB** |
+| **Relationship Ingestion Time** | 1183.75 ms (167266 edges/s) | 209.30 ms (945998 edges/s) | 17.7 pts | **5.66x DuckDB** |
+| **Index / Schema Creation** | 534.25 ms | 16.72 ms | - | SQLite builds 3 B-Trees |
+| **Total End-to-End Loading** | **2828.78 ms** (105346 entities/s) | **407.60 ms** (731101 entities/s) | **14.4 pts** | **6.94x DuckDB** |
 | **Database Footprint on Disk** | **34.00 MB** | **5.51 MB** | 16.2 pts | **6.17x DuckDB** |
 
 ## 3. Workload Performance Breakdown (10 Standard Queries)
@@ -49,21 +48,21 @@ To isolate database compute from Go runtime AST transpilation, both comparisons 
 
 | Query ID | Pattern | Row Count | Compile (µs) | SQLite Precmp | SQLite E2E | DuckDB Ad-hoc | DuckDB Prepd | SQLite Rel Score | Advantage |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| **Q1** | Exact Point Lookup | 1 | `14.7 µs` | 0.081 ms | **0.082 ms** | **0.613 ms** | 0.164 ms | **746.1 pts** | **7.48x SQLite** |
-| **Q2** | Filtered Property Scan (Limit 50) | 50 | `11.2 µs` | 0.505 ms | **0.432 ms** | **0.658 ms** | 0.265 ms | **152.3 pts** | **1.52x SQLite** |
-| **Q3** | Localized 1-Hop Traversal (Limit 20) | 20 | `18.6 µs` | 6.354 ms | **6.360 ms** | **5.870 ms** | 4.438 ms | **92.3 pts** | **1.08x DuckDB** |
-| **Q4** | Localized 2-Hop Traversal (Limit 50) | 50 | `19.4 µs` | 0.429 ms | **0.451 ms** | **3.714 ms** | 2.747 ms | **823.5 pts** | **8.24x SQLite** |
-| **Q5** | Localized Hierarchy Traversal (Limit 10) | 10 | `22.2 µs` | 0.463 ms | **0.483 ms** | **15.442 ms** | 14.035 ms | **3194.8 pts** | **31.97x SQLite** |
+| **Q1** | Exact Point Lookup | 1 | `16.7 µs` | 0.040 ms | **0.080 ms** | **0.552 ms** | 0.164 ms | **686.3 pts** | **6.90x SQLite** |
+| **Q2** | Filtered Property Scan (Limit 50) | 50 | `11.1 µs` | 0.384 ms | **0.405 ms** | **0.628 ms** | 0.256 ms | **154.9 pts** | **1.55x SQLite** |
+| **Q3** | Localized 1-Hop Traversal (Limit 20) | 20 | `20.3 µs` | 6.219 ms | **6.303 ms** | **5.970 ms** | 4.454 ms | **94.7 pts** | **1.06x DuckDB** |
+| **Q4** | Localized 2-Hop Traversal (Limit 50) | 50 | `18.1 µs` | 0.426 ms | **0.454 ms** | **3.913 ms** | 2.798 ms | **861.9 pts** | **8.62x SQLite** |
+| **Q5** | Localized Hierarchy Traversal (Limit 10) | 10 | `23.3 µs` | 0.517 ms | **0.489 ms** | **15.332 ms** | 14.495 ms | **3130.4 pts** | **31.35x SQLite** |
 
 ### Suite B: Structural / Analytical Workload (OLAP)
 
 | Query ID | Pattern | Row Count | Compile (µs) | SQLite Precmp | SQLite E2E | DuckDB Ad-hoc | DuckDB Prepd | SQLite Rel Score | Advantage |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| **Q6** | Unconstrained 2-Hop Full Join | 1 | `16.5 µs` | 24.715 ms | **25.037 ms** | **4.437 ms** | 3.499 ms | **17.7 pts** | **5.64x DuckDB** |
-| **Q7** | Deep Path Expansion (k=1..5) | 1 | `21.7 µs` | 21.480 ms | **21.581 ms** | **18.123 ms** | 13.751 ms | **84.0 pts** | **1.19x DuckDB** |
-| **Q8** | Global Property Filter Aggregation | 1 | `12.1 µs` | 1.180 ms | **1.196 ms** | **0.370 ms** | 0.160 ms | **31.0 pts** | **3.23x DuckDB** |
-| **Q9** | Global Topology Edge Aggregation | 1 | `14.3 µs` | 7.083 ms | **7.521 ms** | **2.229 ms** | 1.407 ms | **29.6 pts** | **3.37x DuckDB** |
-| **Q10** | High Fan-Out Degree Centrality | 10 | `16.3 µs` | 8.443 ms | **8.472 ms** | **3.414 ms** | 2.956 ms | **40.3 pts** | **2.48x DuckDB** |
+| **Q6** | Unconstrained 2-Hop Full Join | 1 | `14.3 µs` | 24.749 ms | **25.459 ms** | **5.590 ms** | 4.327 ms | **22.0 pts** | **4.55x DuckDB** |
+| **Q7** | Deep Path Expansion (k=1..5) | 1 | `37.0 µs` | 26.136 ms | **24.706 ms** | **20.495 ms** | 17.389 ms | **83.0 pts** | **1.21x DuckDB** |
+| **Q8** | Global Property Filter Aggregation | 1 | `11.4 µs` | 1.320 ms | **1.520 ms** | **0.370 ms** | 0.209 ms | **24.3 pts** | **4.11x DuckDB** |
+| **Q9** | Global Topology Edge Aggregation | 1 | `14.4 µs` | 9.959 ms | **7.003 ms** | **1.949 ms** | 1.469 ms | **27.8 pts** | **3.59x DuckDB** |
+| **Q10** | High Fan-Out Degree Centrality | 10 | `16.1 µs` | 10.192 ms | **11.276 ms** | **4.309 ms** | 3.333 ms | **38.2 pts** | **2.62x DuckDB** |
 
 ## 4. Query Patterns & Architectural Findings
 
@@ -85,9 +84,9 @@ FROM GRAPH_TABLE (
 ```
 
 - **Row Parity**: 1 rows returned by both engines (100% match ✓)
-- **Go Compiler Latency**: **14.7 µs** (4645 B/op, 88 allocs)
-- **SQLite End-to-End**: P50=`0.000 ms`, Avg=`0.082 ms`, P99=`1.006 ms`
-- **DuckDB Ad-hoc**: P50=`0.528 ms`, Avg=`0.613 ms`, P99=`1.068 ms`
+- **Go Compiler Latency**: **16.7 µs** (4642 B/op, 88 allocs)
+- **SQLite End-to-End**: P50=`0.000 ms`, Avg=`0.080 ms`, P99=`1.005 ms`
+- **DuckDB Ad-hoc**: P50=`0.514 ms`, Avg=`0.552 ms`, P99=`1.512 ms`
 - **DuckDB Prepared**: P50=`0.000 ms`, Avg=`0.164 ms`, P99=`1.006 ms`
 
 ### Q2 [OLTP]: Filtered Property Scan (Limit 50)
@@ -108,10 +107,10 @@ FROM GRAPH_TABLE (
 ```
 
 - **Row Parity**: 50 rows returned by both engines (100% match ✓)
-- **Go Compiler Latency**: **11.2 µs** (4357 B/op, 85 allocs)
-- **SQLite End-to-End**: P50=`0.509 ms`, Avg=`0.432 ms`, P99=`1.049 ms`
-- **DuckDB Ad-hoc**: P50=`0.511 ms`, Avg=`0.658 ms`, P99=`1.617 ms`
-- **DuckDB Prepared**: P50=`0.000 ms`, Avg=`0.265 ms`, P99=`1.543 ms`
+- **Go Compiler Latency**: **11.1 µs** (4357 B/op, 85 allocs)
+- **SQLite End-to-End**: P50=`0.504 ms`, Avg=`0.405 ms`, P99=`1.006 ms`
+- **DuckDB Ad-hoc**: P50=`0.533 ms`, Avg=`0.628 ms`, P99=`1.509 ms`
+- **DuckDB Prepared**: P50=`0.000 ms`, Avg=`0.256 ms`, P99=`1.008 ms`
 
 ### Q3 [OLTP]: Localized 1-Hop Traversal (Limit 20)
 
@@ -135,10 +134,10 @@ LIMIT 20;
 ```
 
 - **Row Parity**: 20 rows returned by both engines (100% match ✓)
-- **Go Compiler Latency**: **18.6 µs** (4917 B/op, 108 allocs)
-- **SQLite End-to-End**: P50=`6.117 ms`, Avg=`6.360 ms`, P99=`8.182 ms`
-- **DuckDB Ad-hoc**: P50=`5.792 ms`, Avg=`5.870 ms`, P99=`7.620 ms`
-- **DuckDB Prepared**: P50=`4.532 ms`, Avg=`4.438 ms`, P99=`6.046 ms`
+- **Go Compiler Latency**: **20.3 µs** (4917 B/op, 108 allocs)
+- **SQLite End-to-End**: P50=`6.164 ms`, Avg=`6.303 ms`, P99=`7.722 ms`
+- **DuckDB Ad-hoc**: P50=`6.044 ms`, Avg=`5.970 ms`, P99=`7.367 ms`
+- **DuckDB Prepared**: P50=`4.532 ms`, Avg=`4.454 ms`, P99=`6.360 ms`
 
 ### Q4 [OLTP]: Localized 2-Hop Traversal (Limit 50)
 
@@ -158,10 +157,10 @@ FROM GRAPH_TABLE (
 ```
 
 - **Row Parity**: 50 rows returned by both engines (100% match ✓)
-- **Go Compiler Latency**: **19.4 µs** (6339 B/op, 127 allocs)
-- **SQLite End-to-End**: P50=`0.000 ms`, Avg=`0.451 ms`, P99=`1.612 ms`
-- **DuckDB Ad-hoc**: P50=`4.025 ms`, Avg=`3.714 ms`, P99=`5.112 ms`
-- **DuckDB Prepared**: P50=`3.020 ms`, Avg=`2.747 ms`, P99=`3.700 ms`
+- **Go Compiler Latency**: **18.1 µs** (6339 B/op, 127 allocs)
+- **SQLite End-to-End**: P50=`0.000 ms`, Avg=`0.454 ms`, P99=`2.190 ms`
+- **DuckDB Ad-hoc**: P50=`4.073 ms`, Avg=`3.913 ms`, P99=`5.103 ms`
+- **DuckDB Prepared**: P50=`3.018 ms`, Avg=`2.798 ms`, P99=`4.668 ms`
 
 ### Q5 [OLTP]: Localized Hierarchy Traversal (Limit 10)
 
@@ -185,10 +184,10 @@ LIMIT 10;
 ```
 
 - **Row Parity**: 10 rows returned by both engines (100% match ✓)
-- **Go Compiler Latency**: **22.2 µs** (6969 B/op, 147 allocs)
-- **SQLite End-to-End**: P50=`0.504 ms`, Avg=`0.483 ms`, P99=`1.008 ms`
-- **DuckDB Ad-hoc**: P50=`15.287 ms`, Avg=`15.442 ms`, P99=`17.555 ms`
-- **DuckDB Prepared**: P50=`13.851 ms`, Avg=`14.035 ms`, P99=`16.466 ms`
+- **Go Compiler Latency**: **23.3 µs** (6971 B/op, 147 allocs)
+- **SQLite End-to-End**: P50=`0.512 ms`, Avg=`0.489 ms`, P99=`1.038 ms`
+- **DuckDB Ad-hoc**: P50=`15.229 ms`, Avg=`15.332 ms`, P99=`17.471 ms`
+- **DuckDB Prepared**: P50=`14.315 ms`, Avg=`14.495 ms`, P99=`16.872 ms`
 
 ### Q6 [OLAP]: Unconstrained 2-Hop Full Join
 
@@ -208,10 +207,10 @@ SELECT count(*) FROM GRAPH_TABLE (
 ```
 
 - **Row Parity**: 1 rows returned by both engines (100% match ✓)
-- **Go Compiler Latency**: **16.5 µs** (5186 B/op, 103 allocs)
-- **SQLite End-to-End**: P50=`24.982 ms`, Avg=`25.037 ms`, P99=`27.579 ms`
-- **DuckDB Ad-hoc**: P50=`4.394 ms`, Avg=`4.437 ms`, P99=`7.242 ms`
-- **DuckDB Prepared**: P50=`3.095 ms`, Avg=`3.499 ms`, P99=`5.619 ms`
+- **Go Compiler Latency**: **14.3 µs** (5189 B/op, 103 allocs)
+- **SQLite End-to-End**: P50=`25.158 ms`, Avg=`25.459 ms`, P99=`27.768 ms`
+- **DuckDB Ad-hoc**: P50=`5.654 ms`, Avg=`5.590 ms`, P99=`8.319 ms`
+- **DuckDB Prepared**: P50=`4.166 ms`, Avg=`4.327 ms`, P99=`7.768 ms`
 
 ### Q7 [OLAP]: Deep Path Expansion (k=1..5)
 
@@ -231,10 +230,10 @@ SELECT count(DISTINCT target_name) FROM GRAPH_TABLE (
 ```
 
 - **Row Parity**: 1 rows returned by both engines (100% match ✓)
-- **Go Compiler Latency**: **21.7 µs** (8254 B/op, 133 allocs)
-- **SQLite End-to-End**: P50=`21.375 ms`, Avg=`21.581 ms`, P99=`25.613 ms`
-- **DuckDB Ad-hoc**: P50=`17.398 ms`, Avg=`18.123 ms`, P99=`26.755 ms`
-- **DuckDB Prepared**: P50=`13.378 ms`, Avg=`13.751 ms`, P99=`17.560 ms`
+- **Go Compiler Latency**: **37.0 µs** (8250 B/op, 133 allocs)
+- **SQLite End-to-End**: P50=`23.951 ms`, Avg=`24.706 ms`, P99=`33.656 ms`
+- **DuckDB Ad-hoc**: P50=`20.062 ms`, Avg=`20.495 ms`, P99=`28.805 ms`
+- **DuckDB Prepared**: P50=`17.265 ms`, Avg=`17.389 ms`, P99=`22.319 ms`
 
 ### Q8 [OLAP]: Global Property Filter Aggregation
 
@@ -250,10 +249,10 @@ SELECT count(*) FROM Service WHERE framework = 'express';
 ```
 
 - **Row Parity**: 1 rows returned by both engines (100% match ✓)
-- **Go Compiler Latency**: **12.1 µs** (3188 B/op, 62 allocs)
-- **SQLite End-to-End**: P50=`1.527 ms`, Avg=`1.196 ms`, P99=`2.042 ms`
-- **DuckDB Ad-hoc**: P50=`0.000 ms`, Avg=`0.370 ms`, P99=`1.543 ms`
-- **DuckDB Prepared**: P50=`0.000 ms`, Avg=`0.160 ms`, P99=`1.005 ms`
+- **Go Compiler Latency**: **11.4 µs** (3186 B/op, 62 allocs)
+- **SQLite End-to-End**: P50=`1.535 ms`, Avg=`1.520 ms`, P99=`3.217 ms`
+- **DuckDB Ad-hoc**: P50=`0.000 ms`, Avg=`0.370 ms`, P99=`1.558 ms`
+- **DuckDB Prepared**: P50=`0.000 ms`, Avg=`0.209 ms`, P99=`1.007 ms`
 
 ### Q9 [OLAP]: Global Topology Edge Aggregation
 
@@ -273,10 +272,10 @@ SELECT count(*) FROM GRAPH_TABLE (
 ```
 
 - **Row Parity**: 1 rows returned by both engines (100% match ✓)
-- **Go Compiler Latency**: **14.3 µs** (3938 B/op, 78 allocs)
-- **SQLite End-to-End**: P50=`7.157 ms`, Avg=`7.521 ms`, P99=`11.147 ms`
-- **DuckDB Ad-hoc**: P50=`2.044 ms`, Avg=`2.229 ms`, P99=`3.789 ms`
-- **DuckDB Prepared**: P50=`1.512 ms`, Avg=`1.407 ms`, P99=`2.211 ms`
+- **Go Compiler Latency**: **14.4 µs** (3940 B/op, 78 allocs)
+- **SQLite End-to-End**: P50=`7.094 ms`, Avg=`7.003 ms`, P99=`8.259 ms`
+- **DuckDB Ad-hoc**: P50=`2.014 ms`, Avg=`1.949 ms`, P99=`3.294 ms`
+- **DuckDB Prepared**: P50=`1.511 ms`, Avg=`1.469 ms`, P99=`2.523 ms`
 
 ### Q10 [OLAP]: High Fan-Out Degree Centrality
 
@@ -300,10 +299,10 @@ LIMIT 10;
 ```
 
 - **Row Parity**: 10 rows returned by both engines (100% match ✓)
-- **Go Compiler Latency**: **16.3 µs** (4746 B/op, 103 allocs)
-- **SQLite End-to-End**: P50=`8.684 ms`, Avg=`8.472 ms`, P99=`9.729 ms`
-- **DuckDB Ad-hoc**: P50=`3.106 ms`, Avg=`3.414 ms`, P99=`4.816 ms`
-- **DuckDB Prepared**: P50=`2.950 ms`, Avg=`2.956 ms`, P99=`5.641 ms`
+- **Go Compiler Latency**: **16.1 µs** (4746 B/op, 103 allocs)
+- **SQLite End-to-End**: P50=`10.819 ms`, Avg=`11.276 ms`, P99=`17.786 ms`
+- **DuckDB Ad-hoc**: P50=`4.102 ms`, Avg=`4.309 ms`, P99=`7.379 ms`
+- **DuckDB Prepared**: P50=`3.096 ms`, Avg=`3.333 ms`, P99=`7.607 ms`
 
 ## 5. Architectural Conclusions
 

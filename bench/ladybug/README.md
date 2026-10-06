@@ -1,6 +1,6 @@
 # Comprehensive Performance Benchmark: `cypher-sql-go` (Hybrid SQL) vs. LadybugDB (Native C++)
 
-**Date**: 2026-10-06 14:18:04  
+**Date**: 2026-10-06 14:59:06  
 **Platform**: Windows AMD64, Go go1.26.3, LadybugDB v0.21.2 (in-process C-ABI)  
 **Dataset**: 100,000 Nodes, 198,000 Relationships (298,000 Graph Entities)  
 **Workload Diversity**: 10 Queries (5 Transactional/OLTP + 5 Analytical/OLAP), 25 Warmed Iterations each  
@@ -18,16 +18,15 @@
 
 | Workload Dimension | Operational Weight | Embedded Use Case | `cypher-sql-go` (SQLite) | LadybugDB Baseline | Architectural Advantage |
 | :--- | :---: | :--- | :---: | :---: | :--- |
-| **Interactive UI & Point Lookups (OLTP)** | **45%** | Direct callers, symbol lookups, UI inspection (`LIMIT`, point seeks) | **705.8 pts** | 100.0 pts | **7.06x SQLite Faster** |
-| **Whole-Graph Structural Analysis (OLAP)** | **45%** | Circular dependencies, impact radius, dead paths (unconstrained, deep paths) | **60.4 pts** | 100.0 pts | **1.65x LadybugDB Faster** |
-| **Bulk Data Ingestion (298k Entities)** | **10%** | Infrequent initial database population from CSV/raw data | **37.2 pts** | 100.0 pts | **2.69x LadybugDB Faster** |
-| **WEIGHTED COMPOSITE BENCHMARK SCORE** | **100%** | **Realistic operational composite (45% OLTP + 45% OLAP + 10% Ingest = 100%)** | **173.7 pts** | **100.0 pts** | **1.74x OVERALL INDEX** |
-| **Storage Footprint on Disk** | - | Local disk usage footprint | **34.00 MB** | **22.36 MB** | **1.52x LadybugDB Smaller** |
+| **Interactive UI & Point Lookups (OLTP)** | **45%** | Direct callers, symbol lookups, UI inspection (`LIMIT`, point seeks) | **718.2 pts** | 100.0 pts | **7.18x SQLite Faster** |
+| **Whole-Graph Structural Analysis (OLAP)** | **45%** | Circular dependencies, impact radius, dead paths (unconstrained, deep paths) | **56.2 pts** | 100.0 pts | **1.78x LadybugDB Faster** |
+| **Bulk Data Ingestion (298k Entities)** | **10%** | Infrequent initial database population from CSV/raw data | **36.6 pts** | **100.0 pts** | **2.73x LadybugDB Faster** |
+| **WEIGHTED COMPOSITE BENCHMARK SCORE** | **100%** | **Realistic operational composite (45% OLTP + 45% OLAP + 10% Ingest = 100%)** | **169.5 pts** | **100.0 pts** | **1.69x OVERALL INDEX** |
 
 ### Execution-Only vs. End-to-End Latency Breakdown
 To isolate database compute from Go runtime AST transpilation, both comparisons are tracked:
-- **OLTP Execution-Only (Precompiled SQLite vs. Prepared Ladybug)**: `555.5 pts` (5.56x SQLite)
-- **OLAP Execution-Only (Precompiled SQLite vs. Prepared Ladybug)**: `48.2 pts` (2.08x Ladybug)
+- **OLTP Execution-Only (Precompiled SQLite vs. Prepared Ladybug)**: `596.4 pts` (5.96x SQLite)
+- **OLAP Execution-Only (Precompiled SQLite vs. Prepared Ladybug)**: `44.3 pts` (2.26x Ladybug)
 
 ---
 
@@ -37,10 +36,10 @@ To isolate database compute from Go runtime AST transpilation, both comparisons 
 | :--- | :---: | :---: | :---: | :--- |
 | **Nodes Ingested** | 100000 nodes | 100000 nodes | - | Exact Match (✓ Parity) |
 | **Relationships Ingested** | 198000 edges | 198000 edges | - | Exact Match (✓ Parity) |
-| **Node Ingestion Time** | 1090.34 ms (91715 nodes/s) | 636.55 ms (157095 nodes/s) | 58.4 pts | **1.71x LadybugDB** |
-| **Relationship Ingestion Time** | 1163.66 ms (170152 edges/s) | 332.99 ms (594612 edges/s) | 28.6 pts | **3.49x LadybugDB** |
-| **Index Creation + ANALYZE** | 515.63 ms | 61.86 ms (built inline) | - | SQLite builds 3 B-Trees |
-| **Total End-to-End Loading** | **2770.13 ms** (107576 entities/s) | **1031.41 ms** (288925 entities/s) | **37.2 pts** | **2.69x LadybugDB** |
+| **Node Ingestion Time** | 1104.87 ms (90508 nodes/s) | 624.62 ms (160098 nodes/s) | 56.5 pts | **1.77x LadybugDB** |
+| **Relationship Ingestion Time** | 1176.83 ms (168248 edges/s) | 350.55 ms (564831 edges/s) | 29.8 pts | **3.36x LadybugDB** |
+| **Index Creation + ANALYZE** | 522.41 ms | 52.72 ms (built inline) | - | SQLite builds 3 B-Trees |
+| **Total End-to-End Loading** | **2804.61 ms** (106254 entities/s) | **1027.88 ms** (289917 entities/s) | **36.6 pts** | **2.73x LadybugDB** |
 | **Database Footprint on Disk** | **34.00 MB** | **22.36 MB** | 65.8 pts | **1.52x LadybugDB** |
 
 ## 3. Workload Performance Breakdown (10 Standard Queries)
@@ -49,21 +48,21 @@ To isolate database compute from Go runtime AST transpilation, both comparisons 
 
 | Query ID | Pattern | Row Count | Compile (µs) | SQLite Precmp | SQLite E2E | Ladybug Ad-hoc | Ladybug Prepd | SQLite Rel Score | Advantage |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| **Q1** | Exact Point Lookup | 1 | `9.1 µs` | 0.060 ms | **0.063 ms** | **0.977 ms** | 0.472 ms | **1543.2 pts** | **15.51x SQLite** |
-| **Q2** | Filtered Property Scan (Limit 50) | 50 | `13.1 µs` | 0.385 ms | **0.430 ms** | **0.812 ms** | 0.365 ms | **188.8 pts** | **1.89x SQLite** |
-| **Q3** | Localized 1-Hop Traversal (Limit 20) | 20 | `19.3 µs` | 6.330 ms | **6.810 ms** | **6.631 ms** | 7.948 ms | **97.4 pts** | **1.03x Ladybug** |
-| **Q4** | Localized 2-Hop Traversal (Limit 50) | 50 | `18.5 µs` | 0.364 ms | **0.404 ms** | **10.621 ms** | 8.360 ms | **2625.0 pts** | **26.29x SQLite** |
-| **Q5** | Localized Hierarchy Traversal (Limit 10) | 10 | `25.5 µs` | 0.452 ms | **0.560 ms** | **13.193 ms** | 11.230 ms | **2352.0 pts** | **23.56x SQLite** |
+| **Q1** | Exact Point Lookup | 1 | `10.4 µs` | 0.041 ms | **0.081 ms** | **0.792 ms** | 0.470 ms | **972.9 pts** | **9.78x SQLite** |
+| **Q2** | Filtered Property Scan (Limit 50) | 50 | `11.2 µs` | 0.387 ms | **0.388 ms** | **0.932 ms** | 0.385 ms | **240.2 pts** | **2.40x SQLite** |
+| **Q3** | Localized 1-Hop Traversal (Limit 20) | 20 | `24.3 µs` | 6.764 ms | **6.518 ms** | **8.901 ms** | 7.992 ms | **136.5 pts** | **1.37x SQLite** |
+| **Q4** | Localized 2-Hop Traversal (Limit 50) | 50 | `18.1 µs` | 0.431 ms | **0.425 ms** | **10.480 ms** | 10.276 ms | **2463.6 pts** | **24.66x SQLite** |
+| **Q5** | Localized Hierarchy Traversal (Limit 10) | 10 | `22.5 µs` | 0.468 ms | **0.507 ms** | **12.343 ms** | 11.134 ms | **2430.7 pts** | **24.35x SQLite** |
 
 ### Suite B: Structural / Analytical Workload (OLAP)
 
 | Query ID | Pattern | Row Count | Compile (µs) | SQLite Precmp | SQLite E2E | Ladybug Ad-hoc | Ladybug Prepd | SQLite Rel Score | Advantage |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| **Q6** | Unconstrained 2-Hop Full Join | 1 | `17.6 µs` | 25.461 ms | **26.316 ms** | **8.266 ms** | 6.269 ms | **31.4 pts** | **3.18x Ladybug** |
-| **Q7** | Deep Path Expansion (k=1..5) | 1 | `18.6 µs` | 21.341 ms | **22.200 ms** | **7.421 ms** | 5.221 ms | **33.4 pts** | **2.99x Ladybug** |
-| **Q8** | Global Property Filter Aggregation | 1 | `8.1 µs` | 1.198 ms | **1.233 ms** | **1.239 ms** | 0.759 ms | **100.4 pts** | **1.00x SQLite** |
-| **Q9** | Global Topology Edge Aggregation | 1 | `12.1 µs` | 7.119 ms | **7.068 ms** | **8.452 ms** | 6.756 ms | **119.6 pts** | **1.20x SQLite** |
-| **Q10** | High Fan-Out Degree Centrality | 10 | `14.3 µs` | 8.398 ms | **8.436 ms** | **5.397 ms** | 6.012 ms | **64.0 pts** | **1.56x Ladybug** |
+| **Q6** | Unconstrained 2-Hop Full Join | 1 | `18.3 µs` | 26.836 ms | **28.548 ms** | **7.650 ms** | 6.194 ms | **26.8 pts** | **3.73x Ladybug** |
+| **Q7** | Deep Path Expansion (k=1..5) | 1 | `19.2 µs` | 22.830 ms | **21.879 ms** | **7.296 ms** | 5.470 ms | **33.3 pts** | **3.00x Ladybug** |
+| **Q8** | Global Property Filter Aggregation | 1 | `9.1 µs` | 1.198 ms | **1.259 ms** | **1.174 ms** | 0.698 ms | **93.3 pts** | **1.07x Ladybug** |
+| **Q9** | Global Topology Edge Aggregation | 1 | `15.5 µs` | 6.983 ms | **7.214 ms** | **7.705 ms** | 6.002 ms | **106.8 pts** | **1.07x SQLite** |
+| **Q10** | High Fan-Out Degree Centrality | 10 | `16.3 µs` | 8.863 ms | **8.528 ms** | **5.374 ms** | 5.465 ms | **63.0 pts** | **1.59x Ladybug** |
 
 ## 4. Query Patterns & Architectural Findings
 
@@ -76,10 +75,10 @@ MATCH (s:Service {name: 'service_420'}) RETURN s.id, s.name, s.layer, s.framewor
 ```
 
 - **Row Parity**: 1 rows returned by both engines (100% match ✓)
-- **Go Compiler Latency**: **9.1 µs** (4644 B/op, 88 allocs)
-- **SQLite End-to-End**: P50=`0.000 ms`, Avg=`0.063 ms`, P99=`0.534 ms`
-- **LadybugDB Ad-hoc**: P50=`1.008 ms`, Avg=`0.977 ms`, P99=`2.066 ms`
-- **LadybugDB Prepared**: P50=`0.512 ms`, Avg=`0.472 ms`, P99=`1.066 ms`
+- **Go Compiler Latency**: **10.4 µs** (4644 B/op, 88 allocs)
+- **SQLite End-to-End**: P50=`0.000 ms`, Avg=`0.081 ms`, P99=`1.007 ms`
+- **LadybugDB Ad-hoc**: P50=`1.005 ms`, Avg=`0.792 ms`, P99=`1.514 ms`
+- **LadybugDB Prepared**: P50=`0.507 ms`, Avg=`0.470 ms`, P99=`1.511 ms`
 
 ### Q2 [OLTP]: Filtered Property Scan (Limit 50)
 
@@ -90,10 +89,10 @@ MATCH (s:Service) WHERE s.layer = 'Application' RETURN s.name, s.framework, s.la
 ```
 
 - **Row Parity**: 50 rows returned by both engines (100% match ✓)
-- **Go Compiler Latency**: **13.1 µs** (4354 B/op, 85 allocs)
-- **SQLite End-to-End**: P50=`0.000 ms`, Avg=`0.430 ms`, P99=`1.541 ms`
-- **LadybugDB Ad-hoc**: P50=`1.004 ms`, Avg=`0.812 ms`, P99=`2.046 ms`
-- **LadybugDB Prepared**: P50=`0.000 ms`, Avg=`0.365 ms`, P99=`1.512 ms`
+- **Go Compiler Latency**: **11.2 µs** (4354 B/op, 85 allocs)
+- **SQLite End-to-End**: P50=`0.000 ms`, Avg=`0.388 ms`, P99=`1.537 ms`
+- **LadybugDB Ad-hoc**: P50=`1.006 ms`, Avg=`0.932 ms`, P99=`2.084 ms`
+- **LadybugDB Prepared**: P50=`0.504 ms`, Avg=`0.385 ms`, P99=`1.009 ms`
 
 ### Q3 [OLTP]: Localized 1-Hop Traversal (Limit 20)
 
@@ -104,10 +103,10 @@ MATCH (s:Service)-[:USES_DB]->(d:Database) RETURN s.name, count(d) AS db_count O
 ```
 
 - **Row Parity**: 20 rows returned by both engines (100% match ✓)
-- **Go Compiler Latency**: **19.3 µs** (4914 B/op, 108 allocs)
-- **SQLite End-to-End**: P50=`6.197 ms`, Avg=`6.810 ms`, P99=`9.318 ms`
-- **LadybugDB Ad-hoc**: P50=`6.166 ms`, Avg=`6.631 ms`, P99=`11.973 ms`
-- **LadybugDB Prepared**: P50=`7.813 ms`, Avg=`7.948 ms`, P99=`13.597 ms`
+- **Go Compiler Latency**: **24.3 µs** (4920 B/op, 108 allocs)
+- **SQLite End-to-End**: P50=`6.167 ms`, Avg=`6.518 ms`, P99=`8.036 ms`
+- **LadybugDB Ad-hoc**: P50=`8.401 ms`, Avg=`8.901 ms`, P99=`18.678 ms`
+- **LadybugDB Prepared**: P50=`7.712 ms`, Avg=`7.992 ms`, P99=`12.423 ms`
 
 ### Q4 [OLTP]: Localized 2-Hop Traversal (Limit 50)
 
@@ -118,10 +117,10 @@ MATCH (s1:Service)-[:CALLS]->(s2:Service)-[:USES_DB]->(d:Database) RETURN s1.nam
 ```
 
 - **Row Parity**: 50 rows returned by both engines (100% match ✓)
-- **Go Compiler Latency**: **18.5 µs** (6338 B/op, 127 allocs)
-- **SQLite End-to-End**: P50=`0.504 ms`, Avg=`0.404 ms`, P99=`1.506 ms`
-- **LadybugDB Ad-hoc**: P50=`10.144 ms`, Avg=`10.621 ms`, P99=`16.474 ms`
-- **LadybugDB Prepared**: P50=`8.689 ms`, Avg=`8.360 ms`, P99=`12.579 ms`
+- **Go Compiler Latency**: **18.1 µs** (6339 B/op, 127 allocs)
+- **SQLite End-to-End**: P50=`0.503 ms`, Avg=`0.425 ms`, P99=`1.511 ms`
+- **LadybugDB Ad-hoc**: P50=`10.477 ms`, Avg=`10.480 ms`, P99=`13.898 ms`
+- **LadybugDB Prepared**: P50=`9.227 ms`, Avg=`10.276 ms`, P99=`18.604 ms`
 
 ### Q5 [OLTP]: Localized Hierarchy Traversal (Limit 10)
 
@@ -132,10 +131,10 @@ MATCH (s:Service {name: 'service_50'})-[:CONTAINS]->(c:Class)-[:CONTAINS]->(m:Me
 ```
 
 - **Row Parity**: 10 rows returned by both engines (100% match ✓)
-- **Go Compiler Latency**: **25.5 µs** (6971 B/op, 147 allocs)
-- **SQLite End-to-End**: P50=`0.520 ms`, Avg=`0.560 ms`, P99=`1.515 ms`
-- **LadybugDB Ad-hoc**: P50=`13.054 ms`, Avg=`13.193 ms`, P99=`17.827 ms`
-- **LadybugDB Prepared**: P50=`10.934 ms`, Avg=`11.230 ms`, P99=`16.591 ms`
+- **Go Compiler Latency**: **22.5 µs** (6968 B/op, 147 allocs)
+- **SQLite End-to-End**: P50=`0.507 ms`, Avg=`0.507 ms`, P99=`1.009 ms`
+- **LadybugDB Ad-hoc**: P50=`11.724 ms`, Avg=`12.343 ms`, P99=`18.324 ms`
+- **LadybugDB Prepared**: P50=`9.843 ms`, Avg=`11.134 ms`, P99=`17.274 ms`
 
 ### Q6 [OLAP]: Unconstrained 2-Hop Full Join
 
@@ -146,10 +145,10 @@ MATCH (s1:Service)-[:CALLS]->(s2:Service)-[:USES_DB]->(d:Database) RETURN count(
 ```
 
 - **Row Parity**: 1 rows returned by both engines (100% match ✓)
-- **Go Compiler Latency**: **17.6 µs** (5189 B/op, 103 allocs)
-- **SQLite End-to-End**: P50=`25.704 ms`, Avg=`26.316 ms`, P99=`36.256 ms`
-- **LadybugDB Ad-hoc**: P50=`7.296 ms`, Avg=`8.266 ms`, P99=`14.960 ms`
-- **LadybugDB Prepared**: P50=`6.101 ms`, Avg=`6.269 ms`, P99=`10.907 ms`
+- **Go Compiler Latency**: **18.3 µs** (5186 B/op, 103 allocs)
+- **SQLite End-to-End**: P50=`26.752 ms`, Avg=`28.548 ms`, P99=`42.597 ms`
+- **LadybugDB Ad-hoc**: P50=`7.114 ms`, Avg=`7.650 ms`, P99=`12.681 ms`
+- **LadybugDB Prepared**: P50=`5.893 ms`, Avg=`6.194 ms`, P99=`10.704 ms`
 
 ### Q7 [OLAP]: Deep Path Expansion (k=1..5)
 
@@ -160,10 +159,10 @@ MATCH (s:Service {name: 'service_10'})-[:CALLS*1..5]->(target:Service) RETURN co
 ```
 
 - **Row Parity**: 1 rows returned by both engines (100% match ✓)
-- **Go Compiler Latency**: **18.6 µs** (8257 B/op, 133 allocs)
-- **SQLite End-to-End**: P50=`21.946 ms`, Avg=`22.200 ms`, P99=`27.841 ms`
-- **LadybugDB Ad-hoc**: P50=`7.569 ms`, Avg=`7.421 ms`, P99=`8.790 ms`
-- **LadybugDB Prepared**: P50=`5.258 ms`, Avg=`5.221 ms`, P99=`7.922 ms`
+- **Go Compiler Latency**: **19.2 µs** (8263 B/op, 133 allocs)
+- **SQLite End-to-End**: P50=`22.014 ms`, Avg=`21.879 ms`, P99=`24.199 ms`
+- **LadybugDB Ad-hoc**: P50=`7.209 ms`, Avg=`7.296 ms`, P99=`9.373 ms`
+- **LadybugDB Prepared**: P50=`5.761 ms`, Avg=`5.470 ms`, P99=`8.367 ms`
 
 ### Q8 [OLAP]: Global Property Filter Aggregation
 
@@ -174,10 +173,10 @@ MATCH (s:Service) WHERE s.framework = 'express' RETURN count(s) AS express_count
 ```
 
 - **Row Parity**: 1 rows returned by both engines (100% match ✓)
-- **Go Compiler Latency**: **8.1 µs** (3188 B/op, 62 allocs)
-- **SQLite End-to-End**: P50=`1.529 ms`, Avg=`1.233 ms`, P99=`2.026 ms`
-- **LadybugDB Ad-hoc**: P50=`1.510 ms`, Avg=`1.239 ms`, P99=`2.556 ms`
-- **LadybugDB Prepared**: P50=`1.004 ms`, Avg=`0.759 ms`, P99=`1.512 ms`
+- **Go Compiler Latency**: **9.1 µs** (3188 B/op, 62 allocs)
+- **SQLite End-to-End**: P50=`1.510 ms`, Avg=`1.259 ms`, P99=`2.185 ms`
+- **LadybugDB Ad-hoc**: P50=`1.512 ms`, Avg=`1.174 ms`, P99=`2.631 ms`
+- **LadybugDB Prepared**: P50=`0.522 ms`, Avg=`0.698 ms`, P99=`1.515 ms`
 
 ### Q9 [OLAP]: Global Topology Edge Aggregation
 
@@ -188,10 +187,10 @@ MATCH (a:Service)-[r:CALLS]->(b:Service) RETURN count(r) AS total_calls
 ```
 
 - **Row Parity**: 1 rows returned by both engines (100% match ✓)
-- **Go Compiler Latency**: **12.1 µs** (3938 B/op, 78 allocs)
-- **SQLite End-to-End**: P50=`7.112 ms`, Avg=`7.068 ms`, P99=`8.300 ms`
-- **LadybugDB Ad-hoc**: P50=`8.181 ms`, Avg=`8.452 ms`, P99=`12.881 ms`
-- **LadybugDB Prepared**: P50=`6.710 ms`, Avg=`6.756 ms`, P99=`9.283 ms`
+- **Go Compiler Latency**: **15.5 µs** (3940 B/op, 78 allocs)
+- **SQLite End-to-End**: P50=`7.131 ms`, Avg=`7.214 ms`, P99=`8.216 ms`
+- **LadybugDB Ad-hoc**: P50=`7.646 ms`, Avg=`7.705 ms`, P99=`12.287 ms`
+- **LadybugDB Prepared**: P50=`6.102 ms`, Avg=`6.002 ms`, P99=`10.375 ms`
 
 ### Q10 [OLAP]: High Fan-Out Degree Centrality
 
@@ -202,10 +201,10 @@ MATCH (n:Service)-[r:CALLS]->() RETURN n.name, count(r) AS degree ORDER BY degre
 ```
 
 - **Row Parity**: 10 rows returned by both engines (100% match ✓)
-- **Go Compiler Latency**: **14.3 µs** (4749 B/op, 103 allocs)
-- **SQLite End-to-End**: P50=`8.634 ms`, Avg=`8.436 ms`, P99=`9.793 ms`
-- **LadybugDB Ad-hoc**: P50=`5.538 ms`, Avg=`5.397 ms`, P99=`7.846 ms`
-- **LadybugDB Prepared**: P50=`6.079 ms`, Avg=`6.012 ms`, P99=`10.825 ms`
+- **Go Compiler Latency**: **16.3 µs** (4749 B/op, 103 allocs)
+- **SQLite End-to-End**: P50=`8.724 ms`, Avg=`8.528 ms`, P99=`10.693 ms`
+- **LadybugDB Ad-hoc**: P50=`5.163 ms`, Avg=`5.374 ms`, P99=`9.415 ms`
+- **LadybugDB Prepared**: P50=`5.067 ms`, Avg=`5.465 ms`, P99=`9.160 ms`
 
 ## 5. Architectural Conclusions
 
