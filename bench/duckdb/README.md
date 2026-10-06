@@ -14,7 +14,7 @@
 ## 1. Split Workload Benchmark Summary (SPEC / LDBC Style)
 
 > Standardized SPEC/Geekbench-style normalized scoring where **DuckDB + DuckPGQ Baseline = 100.0 points**.
-> To reflect real-world operational frequency, metrics are weighted: **90% Query Serving (45% OLTP + 45% OLAP)** and **10% Infrequent Bulk Ingestion**.
+> To reflect real-world operational frequency, metrics are weighted: **45% OLTP (Interactive) + 45% OLAP (Structural) + 10% Bulk Ingestion = 100% Total**.
 
 | Workload Dimension | Operational Weight | Embedded Use Case | `cypher-sql-go` (SQLite) | DuckDB + DuckPGQ Baseline | Architectural Advantage |
 | :--- | :---: | :--- | :---: | :---: | :--- |
@@ -22,7 +22,6 @@
 | **Whole-Graph Structural Analysis (OLAP)** | **45%** | Circular dependencies, impact radius, dead paths (unconstrained, deep paths) | **35.3 pts** | 100.0 pts | **2.83x DuckDB Faster** |
 | **Bulk Data Ingestion (298k Entities)** | **10%** | Infrequent initial database population from CSV/raw data | **13.3 pts** | 100.0 pts | **7.54x DuckDB Faster** |
 | **WEIGHTED COMPOSITE BENCHMARK SCORE** | **100%** | **Realistic operational composite (45% OLTP + 45% OLAP + 10% Ingest = 100%)** | **104.3 pts** | **100.0 pts** | **1.04x OVERALL INDEX** |
-| *Query-Only Reference Index (All 10 Queries)* | *-* | *Pure query serving capacity without ingestion (geometric mean Q1–Q10)* | *131.3 pts* | *100.0 pts* | *1.31x Balanced Speedup* |
 | **Storage Footprint on Disk** | - | Local disk usage footprint | **34.00 MB** | **5.51 MB** | **6.17x DuckDB Smaller** |
 
 ### Execution-Only vs. End-to-End Latency Breakdown

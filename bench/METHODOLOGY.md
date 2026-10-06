@@ -164,18 +164,17 @@ $$\text{GeoMean}(S_1, S_2, \dots, S_n) = \exp\left( \frac{1}{n} \sum_{i=1}^{n} \
 
 ### Defined Benchmark Indices
 
-1. **Interactive UI & Point Lookup Index (OLTP)**:
+The benchmark evaluates three concrete operational dimensions:
+
+1. **Interactive UI & Point Lookup Index (OLTP - 45% Weight)**:
    $$\text{Index}_{\text{OLTP}} = \left( \prod_{i=1}^{5} \text{Score}_i \right)^{1/5}$$
-   Measures responsiveness on low-latency, user-facing, and bounded interactive queries.
-2. **Whole-Graph Structural Analysis Index (OLAP)**:
+   Measures responsiveness on low-latency, user-facing, and bounded interactive queries (Q1–Q5).
+2. **Whole-Graph Structural Analysis Index (OLAP - 45% Weight)**:
    $$\text{Index}_{\text{OLAP}} = \left( \prod_{i=6}^{10} \text{Score}_i \right)^{1/5}$$
-   Measures throughput on unconstrained joins, deep paths, and whole-graph topological scans.
-3. **Balanced Query Index / Query Serving Index (All 10 Queries)**:
-   $$\text{Index}_{\text{Query}} = \sqrt{\text{Index}_{\text{OLTP}} \times \text{Index}_{\text{OLAP}}} = \left( \prod_{i=1}^{10} \text{Score}_i \right)^{1/10}$$
-   Measures pure query serving capacity across all 10 query archetypes (Q1–Q10) with equal 50/50 balance between interactive (OLTP) and structural (OLAP) workloads, completely independent of bulk data ingestion.
-4. **Bulk Ingestion Index**:
+   Measures throughput on unconstrained joins, deep paths, and whole-graph topological scans (Q6–Q10).
+3. **Bulk Ingestion Index (10% Weight)**:
    $$\text{Index}_{\text{Ingest}} = \text{Score}_{\text{Ingest}}$$
-   Measures initial bulk loading throughput (nodes, edges, indices).
+   Measures initial bulk loading throughput (298k nodes and edges, B-Tree / CSR index creation).
 
 ### Operational Frequency Weighting: Realistic Composite Index
 
@@ -185,27 +184,23 @@ Treating bulk ingestion with equal weight to query processing distorts real-worl
 
 To provide a realistic single-number summary alongside the unblended split indices, we apply an **Operational Frequency Weight Distribution**:
 
-| Operational Dimension | Weight ($w_k$) | Real-World Operational Frequency |
-| :--- | :---: | :--- |
-| **Interactive UI & Point Lookups (OLTP - 5 Queries)** | **45%** ($0.45$) | Extremely high frequency (keystroke hovers, symbol jumps, caller checks) |
-| **Whole-Graph Structural Analysis (OLAP - 5 Queries)** | **45%** ($0.45$) | High/periodic frequency (dependency audits, impact radius, CI builds) |
-| **Bulk Data Ingestion (Initial Population)** | **10%** ($0.10$) | Infrequent setup activity (initial repo import, cold sync, full re-indexing) |
-| **Total Operational Weight** | **100%** ($1.00$) | **45% OLTP + 45% OLAP + 10% Ingest = 100% Total** |
+| Operational Dimension | Weight ($w_k$) | Evaluated Tests | Real-World Operational Frequency |
+| :--- | :---: | :--- | :--- |
+| **Interactive UI & Point Lookups (OLTP)** | **45%** ($0.45$) | Q1–Q5 (point seeks, early-exit `LIMIT`, shallow joins) | Extremely high frequency (keystroke hovers, symbol jumps, caller checks) |
+| **Whole-Graph Structural Analysis (OLAP)** | **45%** ($0.45$) | Q6–Q10 (unconstrained joins, deep paths $k=1..5$, global scans) | High/periodic frequency (dependency audits, impact radius, CI builds) |
+| **Bulk Data Ingestion (Initial Loading)** | **10%** ($0.10$) | 298k entities (CSV parsing, table insertion, index building) | Infrequent setup activity (initial repo import, cold sync, full re-indexing) |
+| **TOTAL OPERATIONAL WEIGHT** | **100%** ($1.00$) | **All 10 queries + Full Dataset Ingestion** | **45% OLTP + 45% OLAP + 10% Ingest = 100% Total** |
 
 #### Weighted Geometric Mean Formula:
 $$\text{Index}_{\text{Composite}} = \exp\left( 0.45 \ln(\text{Index}_{\text{OLTP}}) + 0.45 \ln(\text{Index}_{\text{OLAP}}) + 0.10 \ln(\text{Index}_{\text{Ingest}}) \right)$$
 $$\text{Index}_{\text{Composite}} = \text{Index}_{\text{OLTP}}^{0.45} \times \text{Index}_{\text{OLAP}}^{0.45} \times \text{Index}_{\text{Ingest}}^{0.10}$$
 $$\sum w_k = 0.45 + 0.45 + 0.10 = 1.00 \quad (100\%)$$
 
-> [!NOTE]
-> **What is the "Query Serving Index (10 Queries)"?**
-> In the summary tables and reports, the **Query Serving Index** (or *Balanced Query Index*) refers to $\text{Index}_{\text{Query}}$—the unweighted geometric mean of all 10 queries ($Q_1 \dots Q_{10}$). It is reported with weight `-` as a standalone reference metric to show pure query serving capacity when bulk ingestion is excluded.
-
 > [!TIP]
 > **Reading the Results**:
 > - If your application is a **read-heavy interactive tool** (IDE, CLI, API gateway): prioritize the **OLTP Index (45% weight)**.
 > - If your application performs **deep structural graph analysis** (security audit, call graph analysis): prioritize the **OLAP Index (45% weight)**.
-> - If evaluating **end-to-end operational cost**: look at the **Weighted Composite Score (90% queries / 10% ingestion)**.
+> - If evaluating **end-to-end operational cost**: look at the **Weighted Composite Score (100% Total)**.
 
 ---
 
