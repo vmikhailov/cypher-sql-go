@@ -1,3 +1,5 @@
+//go:build windows
+
 package main
 
 import (
@@ -65,9 +67,10 @@ func cStringToGo(ptr uintptr) string {
 	if ptr == 0 {
 		return ""
 	}
+	p := *(*unsafe.Pointer)(unsafe.Pointer(&ptr))
 	var bytes []byte
 	for i := uintptr(0); ; i++ {
-		b := *(*byte)(unsafe.Pointer(ptr + i))
+		b := *(*byte)(unsafe.Add(p, i))
 		if b == 0 {
 			break
 		}
