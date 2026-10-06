@@ -187,10 +187,11 @@ To provide a realistic single-number summary alongside the unblended split indic
 
 | Operational Dimension | Weight ($w_k$) | Real-World Operational Frequency |
 | :--- | :---: | :--- |
-| **Interactive UI & Point Lookups (OLTP)** | **45%** ($0.45$) | Extremely high frequency (keystroke hovers, symbol jumps, caller checks) |
-| **Whole-Graph Structural Analysis (OLAP)** | **45%** ($0.45$) | High/periodic frequency (dependency audits, impact radius, CI builds) |
-| **Bulk Data Ingestion (Initial Population)** | **10%** ($0.10$) | Infrequent setup activity (initial repo import, cold sync, full re-indexing) |
-| **Total Operational Weight** | **100%** ($1.00$) | **90% Query Serving + 10% Initial Ingestion** |
+| **1. Query Serving Workload (10 Queries)** | **90%** ($0.90$) | Continuous operational query execution across 10 core patterns |
+| ↳ *Suite A: Interactive UI & Point Lookups (OLTP)* | *45%* ($0.45$) | Extremely high frequency (keystroke hovers, symbol jumps, caller checks) |
+| ↳ *Suite B: Whole-Graph Structural Analysis (OLAP)* | *45%* ($0.45$) | High/periodic frequency (dependency audits, impact radius, CI builds) |
+| **2. Bulk Data Ingestion (Initial Population)** | **10%** ($0.10$) | Infrequent setup activity (initial repo import, cold sync, full re-indexing) |
+| **Total Operational Weight** | **100%** ($1.00$) | **90% Query Serving (45% OLTP + 45% OLAP) + 10% Ingest** |
 
 #### Weighted Geometric Mean Formula:
 $$\text{Index}_{\text{Composite}} = \exp\left( 0.45 \ln(\text{Index}_{\text{OLTP}}) + 0.45 \ln(\text{Index}_{\text{OLAP}}) + 0.10 \ln(\text{Index}_{\text{Ingest}}) \right)$$
