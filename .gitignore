@@ -31,3 +31,8 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Benchmark databases
+bench_data/*.lbug
+bench_data/*.lbug/
+bench_data/*.db
