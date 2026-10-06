@@ -1,5 +1,3 @@
-//go:build bench
-
 package main
 
 // getBenchmarkQueries returns the standardized 10 query patterns partitioned into OLTP and OLAP suites.

@@ -9,10 +9,10 @@ bench:
 	go test -tags bench -v -run=^$$ -bench=. -benchmem ./...
 
 bench-ladybug:
-	go run -tags bench ./bench/ladybug
+	go run ./bench/ladybug
 
 bench-duckdb:
-	go run -tags bench ./bench/duckdb
+	go run ./bench/duckdb
 
 fmt:
 	gofmt -w -s .

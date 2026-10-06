@@ -1,4 +1,4 @@
-//go:build !windows && bench
+//go:build !windows
 
 package main
 
