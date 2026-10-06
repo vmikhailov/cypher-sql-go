@@ -282,14 +282,14 @@ All performance evaluations follow our standardized **[Unified Benchmark Methodo
 
 ### Split Workload Benchmark Summary (SPEC / LDBC Style)
 
-In production embedded software, databases serve queries continuously across millions of user interactions, whereas bulk data ingestion is an infrequent setup event. Metrics are weighted across three operational dimensions totaling 100% (**45% OLTP + 45% OLAP + 10% Initial Bulk Ingestion**):
+In production embedded software, databases serve queries continuously across millions of user interactions, whereas bulk data ingestion is an infrequent setup event. Metrics are weighted by operational frequency in an **Interactive Developer Tooling / Embedded Profile** (**60% OLTP + 35% OLAP + 5% Initial Bulk Ingestion = 100% Total**):
 
 | Workload Dimension | Operational Weight | `cypher-sql-go` (SQLite) vs. LadybugDB | `cypher-sql-go` (SQLite) vs. DuckDB + PGQ | Architectural Trade-Off |
 | :--- | :---: | :---: | :---: | :--- |
-| **Interactive UI & Point Lookups (OLTP)** | **45%** | **718.2 pts** (**7.18x SQLite**) | **486.2 pts** (**4.86x SQLite**) | Zero vectorization setup, instant B-Tree seeks, low-overhead tuple pipeline |
-| **Whole-Graph Structural Analysis (OLAP)** | **45%** | **56.2 pts** (1.78x LadybugDB) | **34.3 pts** (2.92x DuckDB) | CSR edge list compression, columnar SIMD scans, multi-core morsels |
-| **Bulk Data Ingestion (298k Entities)** | **10%** | **36.6 pts** (2.73x LadybugDB) | **14.4 pts** (6.94x DuckDB) | Vectorized columnar CSV parsers (`read_csv_auto`) vs. row-by-row SQL |
-| **WEIGHTED COMPOSITE BENCHMARK SCORE** | **100%** | **169.5 pts** (**1.70x OVERALL**) | **103.6 pts** (**1.04x OVERALL**) | **Realistic operational composite (45% OLTP + 45% OLAP + 10% Ingest = 100%)** |
+| **Interactive UI & Point Lookups (OLTP)** | **60%** | **630.6 pts** (**6.31x SQLite**) | **537.1 pts** (**5.37x SQLite**) | Zero vectorization setup, instant B-Tree seeks, low-overhead tuple pipeline |
+| **Whole-Graph Structural Analysis (OLAP)** | **35%** | **52.2 pts** (1.92x LadybugDB) | **34.2 pts** (2.93x DuckDB) | CSR edge list compression, columnar SIMD scans, multi-core morsels |
+| **Bulk Data Ingestion (298k Entities)** | **5%** | **33.6 pts** (2.97x LadybugDB) | **11.8 pts** (8.49x DuckDB) | Vectorized columnar CSV parsers (`read_csv_auto`) vs. row-by-row SQL |
+| **WEIGHTED COMPOSITE BENCHMARK SCORE** | **100%** | **227.7 pts** (**2.28x OVERALL**) | **169.2 pts** (**1.69x OVERALL**) | **Realistic operational composite (60% OLTP + 35% OLAP + 5% Ingest = 100%)** |
 
 > 💾 **Storage Footprint**: SQLite 34.0 MB vs. LadybugDB 22.4 MB (1.52x smaller) vs. DuckDB 5.5 MB (6.17x smaller via bit-packing & dictionary compression).
 

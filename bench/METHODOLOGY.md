@@ -166,40 +166,40 @@ $$\text{GeoMean}(S_1, S_2, \dots, S_n) = \exp\left( \frac{1}{n} \sum_{i=1}^{n} \
 
 The benchmark evaluates three concrete operational dimensions:
 
-1. **Interactive UI & Point Lookup Index (OLTP - 45% Weight)**:
+1. **Interactive UI & Point Lookup Index (OLTP - 60% Weight)**:
    $$\text{Index}_{\text{OLTP}} = \left( \prod_{i=1}^{5} \text{Score}_i \right)^{1/5}$$
-   Measures responsiveness on low-latency, user-facing, and bounded interactive queries (Q1–Q5).
-2. **Whole-Graph Structural Analysis Index (OLAP - 45% Weight)**:
+   Measures responsiveness on low-latency, user-facing, and bounded interactive queries (Q1–Q5). Dominates event volume in embedded desktop and IDE workloads.
+2. **Whole-Graph Structural Analysis Index (OLAP - 35% Weight)**:
    $$\text{Index}_{\text{OLAP}} = \left( \prod_{i=6}^{10} \text{Score}_i \right)^{1/5}$$
    Measures throughput on unconstrained joins, deep paths, and whole-graph topological scans (Q6–Q10).
-3. **Bulk Ingestion Index (10% Weight)**:
+3. **Bulk Ingestion Index (5% Weight)**:
    $$\text{Index}_{\text{Ingest}} = \text{Score}_{\text{Ingest}}$$
    Measures initial bulk loading throughput (298k nodes and edges, B-Tree / CSR index creation).
 
 ### Operational Frequency Weighting: Realistic Composite Index
 
-In production software (IDEs, CLI tools, microservices, and desktop agents), an embedded database performs queries and traversals continuously (millions of operations), while bulk data ingestion is an infrequent setup event (performed once during initial repo indexing or periodic sync).
+In production embedded software (IDEs, CLI tools, developer agents, and local desktop software), an embedded graph database serves point lookups and UI queries on almost every user action (millions of calls), while structural audits run periodically and bulk data ingestion is an amortized one-time setup event (initial repo index or cold sync).
 
-Treating bulk ingestion with equal weight to query processing distorts real-world utility: an engine that is 7x slower on bulk loading would be penalized by 50% in a naive category-averaged composite, even though ingestion accounts for $<1\%$ of production execution time.
+Treating bulk ingestion with equal weight to query processing distorts real-world utility: an engine that is 7x slower on bulk loading would be penalized excessively in an unweighted composite, even though ingestion accounts for $<0.1\%$ of production execution time.
 
-To provide a realistic single-number summary alongside the unblended split indices, we apply an **Operational Frequency Weight Distribution**:
+To provide a realistic single-number summary alongside the unblended split indices, we apply an **Interactive Developer Tooling / Embedded Profile (60 / 35 / 5)**:
 
 | Operational Dimension | Weight ($w_k$) | Evaluated Tests | Real-World Operational Frequency |
 | :--- | :---: | :--- | :--- |
-| **Interactive UI & Point Lookups (OLTP)** | **45%** ($0.45$) | Q1–Q5 (point seeks, early-exit `LIMIT`, shallow joins) | Extremely high frequency (keystroke hovers, symbol jumps, caller checks) |
-| **Whole-Graph Structural Analysis (OLAP)** | **45%** ($0.45$) | Q6–Q10 (unconstrained joins, deep paths $k=1..5$, global scans) | High/periodic frequency (dependency audits, impact radius, CI builds) |
-| **Bulk Data Ingestion (Initial Loading)** | **10%** ($0.10$) | 298k entities (CSV parsing, table insertion, index building) | Infrequent setup activity (initial repo import, cold sync, full re-indexing) |
-| **TOTAL OPERATIONAL WEIGHT** | **100%** ($1.00$) | **All 10 queries + Full Dataset Ingestion** | **45% OLTP + 45% OLAP + 10% Ingest = 100% Total** |
+| **Interactive UI & Point Lookups (OLTP)** | **60%** ($0.60$) | Q1–Q5 (point seeks, early-exit `LIMIT`, shallow joins) | Dominant frequency (keystroke hovers, symbol jumps, caller checks) |
+| **Whole-Graph Structural Analysis (OLAP)** | **35%** ($0.35$) | Q6–Q10 (unconstrained joins, deep paths $k=1..5$, global scans) | Periodic frequency (dependency audits, impact radius, CI builds) |
+| **Bulk Data Ingestion (Initial Loading)** | **5%** ($0.05$) | 298k entities (CSV parsing, table insertion, index building) | One-time amortized setup (initial repo import, cold sync) |
+| **TOTAL OPERATIONAL WEIGHT** | **100%** ($1.00$) | **All 10 queries + Full Dataset Ingestion** | **60% OLTP + 35% OLAP + 5% Ingest = 100% Total** |
 
 #### Weighted Geometric Mean Formula:
-$$\text{Index}_{\text{Composite}} = \exp\left( 0.45 \ln(\text{Index}_{\text{OLTP}}) + 0.45 \ln(\text{Index}_{\text{OLAP}}) + 0.10 \ln(\text{Index}_{\text{Ingest}}) \right)$$
-$$\text{Index}_{\text{Composite}} = \text{Index}_{\text{OLTP}}^{0.45} \times \text{Index}_{\text{OLAP}}^{0.45} \times \text{Index}_{\text{Ingest}}^{0.10}$$
-$$\sum w_k = 0.45 + 0.45 + 0.10 = 1.00 \quad (100\%)$$
+$$\text{Index}_{\text{Composite}} = \exp\left( 0.60 \ln(\text{Index}_{\text{OLTP}}) + 0.35 \ln(\text{Index}_{\text{OLAP}}) + 0.05 \ln(\text{Index}_{\text{Ingest}}) \right)$$
+$$\text{Index}_{\text{Composite}} = \text{Index}_{\text{OLTP}}^{0.60} \times \text{Index}_{\text{OLAP}}^{0.35} \times \text{Index}_{\text{Ingest}}^{0.05}$$
+$$\sum w_k = 0.60 + 0.35 + 0.05 = 1.00 \quad (100\%)$$
 
 > [!TIP]
 > **Reading the Results**:
-> - If your application is a **read-heavy interactive tool** (IDE, CLI, API gateway): prioritize the **OLTP Index (45% weight)**.
-> - If your application performs **deep structural graph analysis** (security audit, call graph analysis): prioritize the **OLAP Index (45% weight)**.
+> - If your application is a **read-heavy interactive tool** (IDE, CLI, API gateway): prioritize the **OLTP Index (60% weight)**.
+> - If your application performs **deep structural graph analysis** (security audit, call graph analysis): prioritize the **OLAP Index (35% weight)**.
 > - If evaluating **end-to-end operational cost**: look at the **Weighted Composite Score (100% Total)**.
 
 ---

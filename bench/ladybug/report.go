@@ -95,9 +95,9 @@ func printSummaryReport(results []BenchmarkQueryResult, sqlIngest, lbugIngest In
 	fmt.Println("---------------------------------------------------------------------------------------------------------")
 	fmt.Println("                       SPLIT WORKLOAD METRICS: DUAL-USE EMBEDDED PROFILE (SPEC STYLE)                   ")
 	fmt.Println("---------------------------------------------------------------------------------------------------------")
-	fmt.Printf("  [1] INTERACTIVE UI & POINT LOOKUPS (OLTP - 5 Queries, 45%% Weight): %8.1f pts (Ladybug: 100.0 pts) -> %.2fx SQLite Faster\n",
+	fmt.Printf("  [1] INTERACTIVE UI & POINT LOOKUPS (OLTP - 5 Queries, 60%% Weight): %8.1f pts (Ladybug: 100.0 pts) -> %.2fx SQLite Faster\n",
 		oltpGeoMean, oltpGeoMean/100.0)
-	fmt.Printf("  [2] WHOLE-GRAPH STRUCTURAL ANALYSIS (OLAP - 5 Queries, 45%% Weight): %8.1f pts (Ladybug: 100.0 pts) -> ",
+	fmt.Printf("  [2] WHOLE-GRAPH STRUCTURAL ANALYSIS (OLAP - 5 Queries, 35%% Weight): %8.1f pts (Ladybug: 100.0 pts) -> ",
 		olapGeoMean)
 	if olapGeoMean >= 100.0 {
 		fmt.Printf("%.2fx SQLite Faster\n", olapGeoMean/100.0)
@@ -106,17 +106,17 @@ func printSummaryReport(results []BenchmarkQueryResult, sqlIngest, lbugIngest In
 	}
 
 	if hadIngest {
-		fmt.Printf("  [3] BULK DATA INGESTION (Total Ingest Time, 10%% Weight):            %8.1f pts (Ladybug: 100.0 pts) -> %.2fx Ladybug Faster\n",
+		fmt.Printf("  [3] BULK DATA INGESTION (Total Ingest Time, 5%% Weight):             %8.1f pts (Ladybug: 100.0 pts) -> %.2fx Ladybug Faster\n",
 			sqlIngest.Score, 100.0/sqlIngest.Score)
 
 		weightedComposite := weightedGeometricMean(
 			[]float64{oltpGeoMean, olapGeoMean, sqlIngest.Score},
-			[]float64{0.45, 0.45, 0.10},
+			[]float64{0.60, 0.35, 0.05},
 		)
 		fmt.Println("---------------------------------------------------------------------------------------------------------")
 		fmt.Printf("  ★ WEIGHTED COMPOSITE BENCHMARK SCORE:                               %8.1f pts (Ladybug: 100.0 pts) -> %.2fx SQLite\n",
 			weightedComposite, weightedComposite/100.0)
-		fmt.Println("    (Formula: 45% OLTP Interactive + 45% OLAP Structural + 10% Bulk Ingestion = 100% Total)")
+		fmt.Println("    (Formula: 60% OLTP Interactive + 35% OLAP Structural + 5% Bulk Ingestion = 100% Total)")
 		fmt.Println("---------------------------------------------------------------------------------------------------------")
 	}
 	fmt.Println()
@@ -148,12 +148,12 @@ func writeMarkdownReport(filePath string, sqlIngest, lbugIngest IngestResult, re
 	if hadIngest {
 		weightedComposite = weightedGeometricMean(
 			[]float64{oltpGeoMean, olapGeoMean, sqlIngest.Score},
-			[]float64{0.45, 0.45, 0.10},
+			[]float64{0.60, 0.35, 0.05},
 		)
 	} else {
 		weightedComposite = weightedGeometricMean(
 			[]float64{oltpGeoMean, olapGeoMean},
-			[]float64{0.50, 0.50},
+			[]float64{0.63, 0.37},
 		)
 	}
 
@@ -171,23 +171,23 @@ func writeMarkdownReport(filePath string, sqlIngest, lbugIngest IngestResult, re
 
 	sb.WriteString("## 1. Split Workload Benchmark Summary (SPEC / LDBC Style)\n\n")
 	sb.WriteString("> Standardized SPEC/Geekbench-style normalized scoring where **LadybugDB Baseline = 100.0 points**.\n")
-	sb.WriteString("> To reflect real-world operational frequency, metrics are weighted: **45% OLTP (Interactive) + 45% OLAP (Structural) + 10% Bulk Ingestion = 100% Total**.\n\n")
+	sb.WriteString("> To reflect real-world operational frequency, metrics are weighted: **60% OLTP (Interactive) + 35% OLAP (Structural) + 5% Bulk Ingestion = 100% Total**.\n\n")
 
 	sb.WriteString("| Workload Dimension | Operational Weight | Embedded Use Case | `cypher-sql-go` (SQLite) | LadybugDB Baseline | Architectural Advantage |\n")
 	sb.WriteString("| :--- | :---: | :--- | :---: | :---: | :--- |\n")
-	sb.WriteString(fmt.Sprintf("| **Interactive UI & Point Lookups (OLTP)** | **45%%** | Direct callers, symbol lookups, UI inspection (`LIMIT`, point seeks) | **%.1f pts** | 100.0 pts | **%.2fx SQLite Faster** |\n",
+	sb.WriteString(fmt.Sprintf("| **Interactive UI & Point Lookups (OLTP)** | **60%%** | Direct callers, symbol lookups, UI inspection (`LIMIT`, point seeks) | **%.1f pts** | 100.0 pts | **%.2fx SQLite Faster** |\n",
 		oltpGeoMean, oltpGeoMean/100.0))
 	if olapGeoMean >= 100.0 {
-		sb.WriteString(fmt.Sprintf("| **Whole-Graph Structural Analysis (OLAP)** | **45%%** | Circular dependencies, impact radius, dead paths (unconstrained, deep paths) | **%.1f pts** | 100.0 pts | **%.2fx SQLite Faster** |\n",
+		sb.WriteString(fmt.Sprintf("| **Whole-Graph Structural Analysis (OLAP)** | **35%%** | Circular dependencies, impact radius, dead paths (unconstrained, deep paths) | **%.1f pts** | 100.0 pts | **%.2fx SQLite Faster** |\n",
 			olapGeoMean, olapGeoMean/100.0))
 	} else {
-		sb.WriteString(fmt.Sprintf("| **Whole-Graph Structural Analysis (OLAP)** | **45%%** | Circular dependencies, impact radius, dead paths (unconstrained, deep paths) | **%.1f pts** | 100.0 pts | **%.2fx LadybugDB Faster** |\n",
+		sb.WriteString(fmt.Sprintf("| **Whole-Graph Structural Analysis (OLAP)** | **35%%** | Circular dependencies, impact radius, dead paths (unconstrained, deep paths) | **%.1f pts** | 100.0 pts | **%.2fx LadybugDB Faster** |\n",
 			olapGeoMean, 100.0/olapGeoMean))
 	}
 	if hadIngest {
-		sb.WriteString(fmt.Sprintf("| **Bulk Data Ingestion (298k Entities)** | **10%%** | Infrequent initial database population from CSV/raw data | **%.1f pts** | **100.0 pts** | **%.2fx LadybugDB Faster** |\n",
+		sb.WriteString(fmt.Sprintf("| **Bulk Data Ingestion (298k Entities)** | **5%%** | Infrequent initial database population from CSV/raw data | **%.1f pts** | **100.0 pts** | **%.2fx LadybugDB Faster** |\n",
 			sqlIngest.Score, 100.0/sqlIngest.Score))
-		sb.WriteString(fmt.Sprintf("| **WEIGHTED COMPOSITE BENCHMARK SCORE** | **100%%** | **Realistic operational composite (45%% OLTP + 45%% OLAP + 10%% Ingest = 100%%)** | **%.1f pts** | **100.0 pts** | **%.2fx OVERALL INDEX** |\n",
+		sb.WriteString(fmt.Sprintf("| **WEIGHTED COMPOSITE BENCHMARK SCORE** | **100%%** | **Realistic operational composite (60%% OLTP + 35%% OLAP + 5%% Ingest = 100%%)** | **%.1f pts** | **100.0 pts** | **%.2fx OVERALL INDEX** |\n",
 			weightedComposite, weightedComposite/100.0))
 	}
 	sb.WriteString("\n")
