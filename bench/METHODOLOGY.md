@@ -187,15 +187,18 @@ To provide a realistic single-number summary alongside the unblended split indic
 
 | Operational Dimension | Weight ($w_k$) | Real-World Operational Frequency |
 | :--- | :---: | :--- |
-| **1. Query Serving Workload (10 Queries)** | **90%** ($0.90$) | Continuous operational query execution across 10 core patterns |
-| ↳ *Suite A: Interactive UI & Point Lookups (OLTP)* | *45%* ($0.45$) | Extremely high frequency (keystroke hovers, symbol jumps, caller checks) |
-| ↳ *Suite B: Whole-Graph Structural Analysis (OLAP)* | *45%* ($0.45$) | High/periodic frequency (dependency audits, impact radius, CI builds) |
-| **2. Bulk Data Ingestion (Initial Population)** | **10%** ($0.10$) | Infrequent setup activity (initial repo import, cold sync, full re-indexing) |
-| **Total Operational Weight** | **100%** ($1.00$) | **90% Query Serving (45% OLTP + 45% OLAP) + 10% Ingest** |
+| **Interactive UI & Point Lookups (OLTP)** | **45%** ($0.45$) | Extremely high frequency (keystroke hovers, symbol jumps, caller checks) |
+| **Whole-Graph Structural Analysis (OLAP)** | **45%** ($0.45$) | High/periodic frequency (dependency audits, impact radius, CI builds) |
+| **Bulk Data Ingestion (Initial Population)** | **10%** ($0.10$) | Infrequent setup activity (initial repo import, cold sync, full re-indexing) |
+| **Total Operational Weight** | **100%** ($1.00$) | **45% OLTP + 45% OLAP + 10% Ingest = 100% Total** |
 
 #### Weighted Geometric Mean Formula:
 $$\text{Index}_{\text{Composite}} = \exp\left( 0.45 \ln(\text{Index}_{\text{OLTP}}) + 0.45 \ln(\text{Index}_{\text{OLAP}}) + 0.10 \ln(\text{Index}_{\text{Ingest}}) \right)$$
-$$\text{Index}_{\text{Composite}} = \text{Index}_{\text{OLTP}}^{0.45} \times \text{Index}_{\text{OLAP}}^{0.45} \times \text{Index}_{\text{Ingest}}^{0.10} = \text{Index}_{\text{Query}}^{0.90} \times \text{Index}_{\text{Ingest}}^{0.10}$$
+$$\text{Index}_{\text{Composite}} = \text{Index}_{\text{OLTP}}^{0.45} \times \text{Index}_{\text{OLAP}}^{0.45} \times \text{Index}_{\text{Ingest}}^{0.10}$$
+$$\sum w_k = 0.45 + 0.45 + 0.10 = 1.00 \quad (100\%)$$
+
+> [!NOTE]
+> The unweighted 10-query metric $\text{Index}_{\text{Query}} = \sqrt{\text{Index}_{\text{OLTP}} \times \text{Index}_{\text{OLAP}}}$ is reported separately as the **Query-Only Reference Index** (serving capacity without ingestion).
 
 > [!TIP]
 > **Reading the Results**:

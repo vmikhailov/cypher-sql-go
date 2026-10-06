@@ -286,11 +286,11 @@ In production embedded software, databases serve queries continuously across mil
 
 | Workload Dimension | Operational Weight | `cypher-sql-go` (SQLite) vs. LadybugDB | `cypher-sql-go` (SQLite) vs. DuckDB + PGQ | Architectural Trade-Off |
 | :--- | :---: | :---: | :---: | :--- |
-| **1. Query Serving Workload (10 Queries)** | **90%** | **206.5 pts** (**2.07x SQLite**) | **131.3 pts** (**1.31x SQLite**) | Continuous query serving across all 10 query archetypes |
-| ↳ *Suite A: Interactive UI & Point Lookups (OLTP)* | *45%* | **705.8 pts** (**7.06x SQLite**) | **487.7 pts** (**4.88x SQLite**) | Zero vectorization setup, instant B-Tree seeks, low-overhead tuple pipeline |
-| ↳ *Suite B: Whole-Graph Structural Analysis (OLAP)* | *45%* | **60.4 pts** (1.65x LadybugDB) | **35.3 pts** (2.83x DuckDB) | CSR edge list compression, columnar SIMD scans, multi-core morsels |
-| **2. Bulk Data Ingestion (298k Entities)** | **10%** | **37.2 pts** (2.69x LadybugDB) | **13.3 pts** (7.54x DuckDB) | Vectorized columnar CSV parsers (`read_csv_auto`) vs. row-by-row SQL |
-| **WEIGHTED COMPOSITE BENCHMARK SCORE** | **100%** | **173.7 pts** (**1.74x OVERALL**) | **104.3 pts** (**1.04x OVERALL**) | **Realistic operational composite (90% Query Serving + 10% Ingest)** |
+| **Interactive UI & Point Lookups (OLTP)** | **45%** | **705.8 pts** (**7.06x SQLite**) | **487.7 pts** (**4.88x SQLite**) | Zero vectorization setup, instant B-Tree seeks, low-overhead tuple pipeline |
+| **Whole-Graph Structural Analysis (OLAP)** | **45%** | **60.4 pts** (1.65x LadybugDB) | **35.3 pts** (2.83x DuckDB) | CSR edge list compression, columnar SIMD scans, multi-core morsels |
+| **Bulk Data Ingestion (298k Entities)** | **10%** | **37.2 pts** (2.69x LadybugDB) | **13.3 pts** (7.54x DuckDB) | Vectorized columnar CSV parsers (`read_csv_auto`) vs. row-by-row SQL |
+| **WEIGHTED COMPOSITE BENCHMARK SCORE** | **100%** | **173.7 pts** (**1.74x OVERALL**) | **104.3 pts** (**1.04x OVERALL**) | **Realistic operational composite (45% OLTP + 45% OLAP + 10% Ingest = 100%)** |
+| *Query-Only Reference Index (All 10 Queries)* | *-* | *206.5 pts (2.07x SQLite)* | *131.3 pts (1.31x SQLite)* | *Pure query serving capacity without ingestion (Q1–Q10 geometric mean)* |
 | **On-Disk Database Footprint** | - | 34.0 MB vs 22.4 MB (LadybugDB) | 34.0 MB vs 5.5 MB (DuckDB) | DuckDB bit-packing & dictionary compression |
 
 #### Query Latency Highlights (Warmed Iterations)

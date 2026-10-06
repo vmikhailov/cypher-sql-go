@@ -18,11 +18,11 @@
 
 | Workload Dimension | Operational Weight | Embedded Use Case | `cypher-sql-go` (SQLite) | LadybugDB Baseline | Architectural Advantage |
 | :--- | :---: | :--- | :---: | :---: | :--- |
-| **1. Query Serving Workload (10 Queries)** | **90%** | Continuous operational query execution across 10 core patterns | **206.5 pts** | **100.0 pts** | **2.07x Balanced Speedup** |
-| ↳ *Suite A: Interactive UI & Point Lookups (OLTP)* | *45%* | Direct callers, symbol lookups, UI inspection (`LIMIT`, point seeks) | 705.8 pts | 100.0 pts | 7.06x SQLite Faster |
-| ↳ *Suite B: Whole-Graph Structural Analysis (OLAP)* | *45%* | Circular dependencies, impact radius, dead paths (unconstrained, deep paths) | 60.4 pts | 100.0 pts | 1.65x LadybugDB Faster |
-| **2. Bulk Data Ingestion (298k Entities)** | **10%** | Infrequent initial database population from CSV/raw data | **37.2 pts** | **100.0 pts** | **2.69x LadybugDB Faster** |
-| **WEIGHTED COMPOSITE BENCHMARK SCORE** | **100%** | **Realistic operational composite (90% Query Serving + 10% Ingest)** | **173.7 pts** | **100.0 pts** | **1.74x OVERALL INDEX** |
+| **Interactive UI & Point Lookups (OLTP)** | **45%** | Direct callers, symbol lookups, UI inspection (`LIMIT`, point seeks) | **705.8 pts** | 100.0 pts | **7.06x SQLite Faster** |
+| **Whole-Graph Structural Analysis (OLAP)** | **45%** | Circular dependencies, impact radius, dead paths (unconstrained, deep paths) | **60.4 pts** | 100.0 pts | **1.65x LadybugDB Faster** |
+| **Bulk Data Ingestion (298k Entities)** | **10%** | Infrequent initial database population from CSV/raw data | **37.2 pts** | 100.0 pts | **2.69x LadybugDB Faster** |
+| **WEIGHTED COMPOSITE BENCHMARK SCORE** | **100%** | **Realistic operational composite (45% OLTP + 45% OLAP + 10% Ingest = 100%)** | **173.7 pts** | **100.0 pts** | **1.74x OVERALL INDEX** |
+| *Query-Only Reference Index (All 10 Queries)* | *-* | *Pure query serving capacity without ingestion (geometric mean Q1–Q10)* | *206.5 pts* | *100.0 pts* | *2.07x Balanced Speedup* |
 | **Storage Footprint on Disk** | - | Local disk usage footprint | **34.00 MB** | **22.36 MB** | **1.52x LadybugDB Smaller** |
 
 ### Execution-Only vs. End-to-End Latency Breakdown
