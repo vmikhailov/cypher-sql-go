@@ -442,7 +442,6 @@ func (c *Compiler) visitReduce(red ast.ReduceExpr) (string, error) {
 	return "(" + initSQL + " + COALESCE((SELECT sum(value) FROM json_each(" + listSQL + ")), 0))", nil
 }
 
-
 func (c *Compiler) buildSubqueryPath(path ast.PathPattern, prefix string) (string, []string) {
 	var conditions []string
 	var fromJoins strings.Builder

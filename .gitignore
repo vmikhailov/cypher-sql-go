@@ -38,6 +38,11 @@ go.work.sum
 bench/**/*.lbug
 bench/**/*.lbug/
 bench/**/*.db
+bench/**/*.duckdb
+bench/**/*.duckdb.wal
+*.duckdb
+*.duckdb.wal
 bench_data/*.lbug
 bench_data/*.lbug/
 bench_data/*.db
+bench_data/*.duckdb

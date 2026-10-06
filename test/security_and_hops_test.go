@@ -28,10 +28,10 @@ func TestSQLInjection_IdentifiersRejected(t *testing.T) {
 
 func TestVariableLengthRelationships_UnsupportedCases(t *testing.T) {
 	unsupportedQueries := []string{
-		"MATCH (a:Person)-[*1..3]-(b:Person) RETURN a, b",             // undirected
-		"MATCH (a:Person)-[r*1..3]->(b:Person) RETURN a, b",            // bound variable
-		"MATCH (a:Person)-[*0..3]->(b:Person) RETURN a, b",             // 0 hops
-		"MATCH (a:Person)-[*3..1]->(b:Person) RETURN a, b",             // max < min
+		"MATCH (a:Person)-[*1..3]-(b:Person) RETURN a, b",   // undirected
+		"MATCH (a:Person)-[r*1..3]->(b:Person) RETURN a, b", // bound variable
+		"MATCH (a:Person)-[*0..3]->(b:Person) RETURN a, b",  // 0 hops
+		"MATCH (a:Person)-[*3..1]->(b:Person) RETURN a, b",  // max < min
 	}
 
 	for _, q := range unsupportedQueries {

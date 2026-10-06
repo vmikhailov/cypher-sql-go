@@ -380,4 +380,3 @@ func TestReturnPropertyAccess_DefaultAlias(t *testing.T) {
 		t.Fatalf("expected column alias AS \"p.id\", got SQL: %s", compiled.SQL)
 	}
 }
-

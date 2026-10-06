@@ -1,4 +1,4 @@
-.PHONY: test bench bench-ladybug fmt vet check example-sqlite example-clickhouse
+.PHONY: test bench bench-ladybug bench-duckdb fmt vet check example-sqlite example-clickhouse
 
 all: check
 
@@ -10,6 +10,9 @@ bench:
 
 bench-ladybug:
 	go run -tags bench ./bench/ladybug
+
+bench-duckdb:
+	go run -tags bench ./bench/duckdb
 
 fmt:
 	gofmt -w -s .

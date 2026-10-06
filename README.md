@@ -11,10 +11,10 @@ using relational indexes and JSON functions. **Zero external services, zero nati
 read-only safety for AI agents, in-process execution.**
 
 > [!TIP]
-> ### ⚡ Performance Benchmark: `cypher-sql-go` (SQLite) vs. LadybugDB (Native C++)
-> In head-to-head benchmarking on **100,000 Nodes and 198,000 Relationships**, `cypher-sql-go` + SQLite achieved a **Composite Benchmark Score of 404.7 pts vs. LadybugDB's 100.0 pts (4.05x faster overall)**, winning 7/7 query patterns (up to 29.8x faster on multi-hop traversals).
->
-> 📊 **[Read the Comprehensive Benchmark & Methodology Report (bench/ladybug/README.md) →](bench/ladybug/README.md)**
+> ### ⚡ Performance Benchmarks: Embedded Graph Performance (LadybugDB & DuckDB)
+> In head-to-head benchmarking on **100,000 Nodes and 198,000 Relationships**:
+> - **vs. LadybugDB (Native C++):** `cypher-sql-go` achieved a **Composite Score of 404.7% (4.05x faster overall)**, winning 7/7 query patterns. 📊 **[Read LadybugDB Benchmark Report →](bench/ladybug/README.md)**
+> - **vs. DuckDB + DuckPGQ (Embedded OLAP + SQL:2023 Property Graph):** `cypher-sql-go` achieved a **Composite Score of 363.8% (3.64x faster overall)**, excelling at point lookups (10.1x) and multi-hop traversals (up to 34.3x). 🦆 **[Read DuckDB Benchmark Report →](bench/duckdb/README.md)**
 
 ---
 
