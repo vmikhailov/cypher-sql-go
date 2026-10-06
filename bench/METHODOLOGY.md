@@ -170,9 +170,9 @@ $$\text{GeoMean}(S_1, S_2, \dots, S_n) = \exp\left( \frac{1}{n} \sum_{i=1}^{n} \
 2. **Whole-Graph Structural Analysis Index (OLAP)**:
    $$\text{Index}_{\text{OLAP}} = \left( \prod_{i=6}^{10} \text{Score}_i \right)^{1/5}$$
    Measures throughput on unconstrained joins, deep paths, and whole-graph topological scans.
-3. **Balanced Query Index (Overall 10 Queries)**:
+3. **Balanced Query Index / Query Serving Index (All 10 Queries)**:
    $$\text{Index}_{\text{Query}} = \sqrt{\text{Index}_{\text{OLTP}} \times \text{Index}_{\text{OLAP}}} = \left( \prod_{i=1}^{10} \text{Score}_i \right)^{1/10}$$
-   Measures pure query serving capacity with equal 50/50 balance between interactive and structural workloads.
+   Measures pure query serving capacity across all 10 query archetypes (Q1–Q10) with equal 50/50 balance between interactive (OLTP) and structural (OLAP) workloads, completely independent of bulk data ingestion.
 4. **Bulk Ingestion Index**:
    $$\text{Index}_{\text{Ingest}} = \text{Score}_{\text{Ingest}}$$
    Measures initial bulk loading throughput (nodes, edges, indices).
@@ -187,8 +187,8 @@ To provide a realistic single-number summary alongside the unblended split indic
 
 | Operational Dimension | Weight ($w_k$) | Real-World Operational Frequency |
 | :--- | :---: | :--- |
-| **Interactive UI & Point Lookups (OLTP)** | **45%** ($0.45$) | Extremely high frequency (keystroke hovers, symbol jumps, caller checks) |
-| **Whole-Graph Structural Analysis (OLAP)** | **45%** ($0.45$) | High/periodic frequency (dependency audits, impact radius, CI builds) |
+| **Interactive UI & Point Lookups (OLTP - 5 Queries)** | **45%** ($0.45$) | Extremely high frequency (keystroke hovers, symbol jumps, caller checks) |
+| **Whole-Graph Structural Analysis (OLAP - 5 Queries)** | **45%** ($0.45$) | High/periodic frequency (dependency audits, impact radius, CI builds) |
 | **Bulk Data Ingestion (Initial Population)** | **10%** ($0.10$) | Infrequent setup activity (initial repo import, cold sync, full re-indexing) |
 | **Total Operational Weight** | **100%** ($1.00$) | **45% OLTP + 45% OLAP + 10% Ingest = 100% Total** |
 
@@ -198,7 +198,8 @@ $$\text{Index}_{\text{Composite}} = \text{Index}_{\text{OLTP}}^{0.45} \times \te
 $$\sum w_k = 0.45 + 0.45 + 0.10 = 1.00 \quad (100\%)$$
 
 > [!NOTE]
-> The unweighted 10-query metric $\text{Index}_{\text{Query}} = \sqrt{\text{Index}_{\text{OLTP}} \times \text{Index}_{\text{OLAP}}}$ is reported separately as the **Query-Only Reference Index** (serving capacity without ingestion).
+> **What is the "Query Serving Index (10 Queries)"?**
+> In the summary tables and reports, the **Query Serving Index** (or *Balanced Query Index*) refers to $\text{Index}_{\text{Query}}$—the unweighted geometric mean of all 10 queries ($Q_1 \dots Q_{10}$). It is reported with weight `-` as a standalone reference metric to show pure query serving capacity when bulk ingestion is excluded.
 
 > [!TIP]
 > **Reading the Results**:
