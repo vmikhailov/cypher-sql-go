@@ -1,0 +1,20 @@
+{
+  "go.buildFlags": [
+    "-tags=bench"
+  ],
+  "go.buildTags": "bench",
+  "go.testFlags": [
+    "-tags=bench"
+  ],
+  "go.lintFlags": [
+    "-tags=bench"
+  ],
+  "go.vetFlags": [
+    "-tags=bench"
+  ],
+  "gopls": {
+    "build.buildFlags": [
+      "-tags=bench"
+    ]
+  }
+}

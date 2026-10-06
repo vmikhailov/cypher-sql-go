@@ -126,7 +126,8 @@ func printSummaryReport(results []BenchmarkQueryResult, sqlIngest, duckIngest In
 	}
 	fmt.Println("---------------------------------------------------------------------------------------------------------")
 	fmt.Println("  NOTE: Bulk ingestion has reduced 10% weight reflecting its infrequent operational occurrence.")
-	fmt.Println("---------------------------------------------------------------------------------------------------------\n")
+	fmt.Println("---------------------------------------------------------------------------------------------------------")
+	fmt.Println()
 }
 
 func writeMarkdownReport(filePath string, sqlIngest, duckIngest IngestResult, results []BenchmarkQueryResult, iterations int, hadIngest bool) error {
