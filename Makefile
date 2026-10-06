@@ -1,4 +1,4 @@
-.PHONY: test bench fmt vet check example-sqlite example-clickhouse
+.PHONY: test bench bench-ladybug fmt vet check example-sqlite example-clickhouse
 
 all: check
 
@@ -7,6 +7,9 @@ test:
 
 bench:
 	go test -tags bench -v -run=^$$ -bench=. -benchmem ./...
+
+bench-ladybug:
+	go run -tags bench ./bench/ladybug
 
 fmt:
 	gofmt -w -s .

@@ -1,3 +1,5 @@
+//go:build bench
+
 package main
 
 // getBenchmarkQueries returns the standardized 7 query patterns evaluated in the benchmark.

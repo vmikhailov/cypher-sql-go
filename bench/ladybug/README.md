@@ -185,5 +185,5 @@ RETURN c.name, count(m) AS method_count ORDER BY method_count DESC LIMIT 10
 To reproduce these benchmarks on your local machine:
 ```bash
 # Full benchmark: Phase 1 (Ingestion) + Phase 2 (100 Warmed Query Iterations)
-go run ./bench/ladybug -iterations 100 -warmup 10 -bench-ingest=true
+go run -tags bench ./bench/ladybug -iterations 100 -warmup 10 -bench-ingest=true
 ```
