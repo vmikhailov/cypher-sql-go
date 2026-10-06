@@ -50,13 +50,13 @@ func resolveLbugPath(userPath string, dataDir string) string {
 }
 
 func resolveReportPath(userPath string) string {
-	if userPath != "" && userPath != "bench/ladybug/REPORT.md" && userPath != "ladybug_perf_comparison.md" {
+	if userPath != "" && userPath != "bench/ladybug/README.md" && userPath != "bench/ladybug/REPORT.md" && userPath != "REPORT.md" {
 		return userPath
 	}
 	if fi, err := os.Stat("bench/ladybug"); err == nil && fi.IsDir() {
-		return "bench/ladybug/REPORT.md"
+		return "bench/ladybug/README.md"
 	}
-	return "REPORT.md"
+	return "README.md"
 }
 
 func main() {
@@ -80,7 +80,7 @@ func main() {
 	flag.StringVar(&binDir, "bin", "bin", "Directory containing LadybugDB binaries and DLLs")
 	flag.BoolVar(&forceIngest, "reingest", false, "Force re-ingestion of LadybugDB dataset")
 	flag.BoolVar(&benchIngest, "bench-ingest", true, "Run bulk ingestion benchmark comparing SQLite SQL vs LadybugDB")
-	flag.StringVar(&reportPath, "report", "bench/ladybug/REPORT.md", "Output markdown report path")
+	flag.StringVar(&reportPath, "report", "bench/ladybug/README.md", "Output markdown report path")
 	flag.Parse()
 
 	dataDir = resolveDataDir(dataDir)
@@ -310,20 +310,22 @@ func main() {
 		}
 
 		scoreSqlite := (float64(lbugStats.Avg) / float64(sqlE2eStats.Avg)) * 100.0
+		scoreSqliteExec := (float64(lbugPrepStats.Avg) / float64(sqlStats.Avg)) * 100.0
 
 		res := BenchmarkQueryResult{
-			Query:             q,
-			SqliteRows:        sqlRows,
-			LadybugRows:       lbugRows,
-			CompileTimeUs:     compileUs,
-			CompileBytesOp:    bytesOp,
-			CompileAllocsOp:   allocsOp,
-			SqlitePrecompiled: sqlStats,
-			SqliteEndToEnd:    sqlE2eStats,
-			LadybugAdHoc:      lbugStats,
-			LadybugPrepared:   lbugPrepStats,
-			ScoreSqlite:       scoreSqlite,
-			ScoreLadybug:      100.0,
+			Query:                  q,
+			SqliteRows:             sqlRows,
+			LadybugRows:            lbugRows,
+			CompileTimeUs:          compileUs,
+			CompileBytesOp:         bytesOp,
+			CompileAllocsOp:        allocsOp,
+			SqlitePrecompiled:      sqlStats,
+			SqliteEndToEnd:         sqlE2eStats,
+			LadybugAdHoc:           lbugStats,
+			LadybugPrepared:        lbugPrepStats,
+			ScoreSqlite:            scoreSqlite,
+			ScoreSqlitePrecompiled: scoreSqliteExec,
+			ScoreLadybug:           100.0,
 		}
 		results = append(results, res)
 

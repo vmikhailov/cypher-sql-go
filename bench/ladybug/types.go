@@ -10,6 +10,7 @@ import (
 
 type QuerySpec struct {
 	ID          string
+	Category    string // "OLTP" or "OLAP"
 	Name        string
 	Description string
 	Cypher      string
@@ -68,18 +69,19 @@ type IngestResult struct {
 }
 
 type BenchmarkQueryResult struct {
-	Query             QuerySpec
-	SqliteRows        int
-	LadybugRows       int
-	CompileTimeUs     float64
-	CompileBytesOp    uint64
-	CompileAllocsOp   uint64
-	SqlitePrecompiled LatencyStats
-	SqliteEndToEnd    LatencyStats
-	LadybugAdHoc      LatencyStats
-	LadybugPrepared   LatencyStats
-	ScoreSqlite       float64 // (Ladybug Adhoc / Sqlite E2E) * 100.0
-	ScoreLadybug      float64 // 100.0 (baseline)
+	Query                  QuerySpec
+	SqliteRows             int
+	LadybugRows            int
+	CompileTimeUs          float64
+	CompileBytesOp         uint64
+	CompileAllocsOp        uint64
+	SqlitePrecompiled      LatencyStats
+	SqliteEndToEnd         LatencyStats
+	LadybugAdHoc           LatencyStats
+	LadybugPrepared        LatencyStats
+	ScoreSqlite            float64 // (Ladybug Adhoc / Sqlite E2E) * 100.0 (End-to-End)
+	ScoreSqlitePrecompiled float64 // (Ladybug Prepared / Sqlite Precompiled) * 100.0 (Execution-only)
+	ScoreLadybug           float64 // 100.0 (baseline)
 }
 
 func geometricMean(values []float64) float64 {

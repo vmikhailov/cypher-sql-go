@@ -11,10 +11,10 @@ using relational indexes and JSON functions. **Zero external services, zero nati
 read-only safety for AI agents, in-process execution.**
 
 > [!TIP]
-> ### ⚡ Performance Benchmarks: Embedded Graph Performance (LadybugDB & DuckDB)
-> In head-to-head benchmarking on **100,000 Nodes and 198,000 Relationships**:
-> - **vs. LadybugDB (Native C++):** `cypher-sql-go` achieved a **Composite Score of 404.7% (4.05x faster overall)**, winning 7/7 query patterns. 📊 **[Read LadybugDB Benchmark Report →](bench/ladybug/README.md)**
-> - **vs. DuckDB + DuckPGQ (Embedded OLAP + SQL:2023 Property Graph):** `cypher-sql-go` achieved a **Composite Score of 363.8% (3.64x faster overall)**, excelling at point lookups (10.1x) and multi-hop traversals (up to 34.3x). 🦆 **[Read DuckDB Benchmark Report →](bench/duckdb/README.md)**
+> ### ⚡ Performance Benchmarks: Balanced In-Process Workload (SPEC / LDBC Style)
+> In head-to-head benchmarking on **100,000 Nodes and 198,000 Relationships** across 10 balanced queries (5 OLTP + 5 OLAP):
+> - **vs. LadybugDB (Native C++):** `cypher-sql-go` delivers a **7.06x speedup on Transactional/OLTP queries** (point lookups & localized traversals), while LadybugDB leads on **Analytical/OLAP full joins & deep paths (1.65x–3.2x faster)**. 📊 **[Read LadybugDB Benchmark Report (bench/ladybug/README.md) →](bench/ladybug/README.md)**
+> - **vs. DuckDB + DuckPGQ (Embedded OLAP):** `cypher-sql-go` delivers a **4.96x speedup on Transactional/OLTP queries** (up to 30.1x on hierarchy seeks), while DuckDB excels on **Analytical/OLAP full joins & aggregations (2.91x–5.8x faster)**. 🦆 **[Read DuckDB Benchmark Report (bench/duckdb/README.md) →](bench/duckdb/README.md)**
 
 ---
 

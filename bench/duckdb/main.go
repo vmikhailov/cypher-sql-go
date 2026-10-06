@@ -301,20 +301,22 @@ func main() {
 		duckPrepStats := calcStats(duckPrepDurations)
 
 		scoreSqlite := (float64(duckStats.Avg) / float64(sqlE2eStats.Avg)) * 100.0
+		scoreSqliteExec := (float64(duckPrepStats.Avg) / float64(sqlStats.Avg)) * 100.0
 
 		res := BenchmarkQueryResult{
-			Query:             q,
-			SqliteRows:        sqlRows,
-			DuckRows:          duckRows,
-			CompileTimeUs:     compileUs,
-			CompileBytesOp:    bytesOp,
-			CompileAllocsOp:   allocsOp,
-			SqlitePrecompiled: sqlStats,
-			SqliteEndToEnd:    sqlE2eStats,
-			DuckAdHoc:         duckStats,
-			DuckPrepared:      duckPrepStats,
-			ScoreSqlite:       scoreSqlite,
-			ScoreDuck:         100.0,
+			Query:                  q,
+			SqliteRows:             sqlRows,
+			DuckRows:               duckRows,
+			CompileTimeUs:          compileUs,
+			CompileBytesOp:         bytesOp,
+			CompileAllocsOp:        allocsOp,
+			SqlitePrecompiled:      sqlStats,
+			SqliteEndToEnd:         sqlE2eStats,
+			DuckAdHoc:              duckStats,
+			DuckPrepared:           duckPrepStats,
+			ScoreSqlite:            scoreSqlite,
+			ScoreSqlitePrecompiled: scoreSqliteExec,
+			ScoreDuck:              100.0,
 		}
 		results = append(results, res)
 
@@ -324,17 +326,24 @@ func main() {
 			toMs(res.SqliteEndToEnd.Avg), toMs(res.DuckAdHoc.Avg), winner, speed, sqlRows, duckRows)
 	}
 
-	// Calculate Composite Geometric Mean Score
-	scores := make([]float64, len(results))
-	for i, r := range results {
-		scores[i] = r.ScoreSqlite
+	// Calculate Split Metric Scores (OLTP vs OLAP)
+	var oltpScores, olapScores, allScores []float64
+	for _, r := range results {
+		allScores = append(allScores, r.ScoreSqlite)
+		if r.Query.Category == "OLTP" {
+			oltpScores = append(oltpScores, r.ScoreSqlite)
+		} else {
+			olapScores = append(olapScores, r.ScoreSqlite)
+		}
 	}
-	compositeScore := geometricMean(scores)
+	oltpScore := geometricMean(oltpScores)
+	olapScore := geometricMean(olapScores)
+	overallScore := geometricMean(allScores)
 
-	printConsoleReport(sqliteIngest, duckIngest, results, compositeScore)
+	printConsoleReport(sqliteIngest, duckIngest, results, oltpScore, olapScore, overallScore)
 
 	if reportPath != "" {
-		if err := generateMarkdownReport(reportPath, sqliteIngest, duckIngest, results, compositeScore); err != nil {
+		if err := generateMarkdownReport(reportPath, sqliteIngest, duckIngest, results, oltpScore, olapScore, overallScore); err != nil {
 			log.Fatalf("Failed to write Markdown report: %v", err)
 		}
 		fmt.Printf("Report saved to %s\n", reportPath)
