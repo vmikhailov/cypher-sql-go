@@ -301,7 +301,7 @@ In-process head-to-head benchmark on **100,000 Nodes and 198,000 Relationships (
 #### Reproduce the Benchmark
 ```bash
 # Ingest 298k graph entities and execute 100 warmed query iterations:
-go run ./cmd/bench_ladybug -iterations 100 -warmup 10 -bench-ingest=true
+go run ./bench/ladybug -iterations 100 -warmup 10 -bench-ingest=true
 ```
 
 ### Compiler Microbenchmarks

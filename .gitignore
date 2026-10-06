@@ -33,6 +33,11 @@ go.work.sum
 # .vscode/
 
 # Benchmark databases
+*.lbug
+*.lbug/
+bench/**/*.lbug
+bench/**/*.lbug/
+bench/**/*.db
 bench_data/*.lbug
 bench_data/*.lbug/
 bench_data/*.db
