@@ -10,6 +10,12 @@ An **embedded read-only OpenCypher to SQL compiler & query transpiler** written 
 using relational indexes and JSON functions. **Zero external services, zero native C++ binaries (100% CGO-free),
 read-only safety for AI agents, in-process execution.**
 
+> [!TIP]
+> ### ⚡ Performance Benchmark: `cypher-sql-go` (SQLite) vs. LadybugDB (Native C++)
+> In head-to-head benchmarking on **100,000 Nodes and 198,000 Relationships**, `cypher-sql-go` + SQLite achieved a **Composite Benchmark Score of 404.7 pts vs. LadybugDB's 100.0 pts (4.05x faster overall)**, winning 7/7 query patterns (up to 29.8x faster on multi-hop traversals).
+>
+> 📊 **[Read the Comprehensive Benchmark & Methodology Report (BENCHMARK_LADYBUG.md) →](BENCHMARK_LADYBUG.md)**
+
 ---
 
 ## Why CypherSQL?
@@ -267,6 +273,38 @@ func main() {
 
 ## Performance & Benchmarks
 
+### Head-to-Head: `cypher-sql-go` (SQLite) vs. LadybugDB (Native C++)
+
+In-process head-to-head benchmark on **100,000 Nodes and 198,000 Relationships (298,000 Graph Entities)**:
+- **Baseline Engine**: LadybugDB v0.21.2 = **100.0 pts**
+- **Evaluation**: 100 warmed iterations per query with strict row parity validation.
+
+| Benchmark Category | SQLite (Hybrid SQL) Score | LadybugDB Baseline | Advantage |
+| :--- | :---: | :---: | :--- |
+| **Query Execution Index (Geometric Mean)** | **526.2 pts** | 100.0 pts | **5.26x SQLite Faster** (Won 7/7 queries) |
+| **Bulk Data Ingestion (298k Entities)** | **64.4 pts** | 100.0 pts | **1.55x Ladybug Faster** (1.56s vs 1.00s) |
+| **FINAL COMPOSITE BENCHMARK SCORE** | **404.7 pts** | **100.0 pts** | **4.05x OVERALL SPEEDUP** |
+
+#### Query Latency Highlights (100 Warmed Iterations)
+
+| Query Pattern | `cypher-sql-go` Compile | SQLite E2E (Total) | LadybugDB (Native) | Speedup / Advantage |
+| :--- | :---: | :---: | :---: | :--- |
+| **Q1: Exact Point Lookup** | 9.26 µs | **0.071 ms** | 0.785 ms | **11.06x SQLite Faster** |
+| **Q2: Filtered Property Scan (LIMIT 50)** | 12.21 µs | **0.387 ms** | 0.898 ms | **2.32x SQLite Faster** |
+| **Q4: 2-Hop Multi-Join Traversal** | 18.27 µs | **0.437 ms** | 12.067 ms | **27.61x SQLite Faster** |
+| **Q5: Variable-Length Path (1..3 hops)** | 20.50 µs | **2.671 ms** | 5.633 ms | **2.11x SQLite Faster** |
+| **Q7: 2-Tier Hierarchy (S->C->M)** | 43.69 µs | **0.543 ms** | 16.190 ms | **29.82x SQLite Faster** |
+
+> 📖 **Full Analysis**: For complete execution plans, statistical percentiles (p50/p95/p99), and architectural findings:  
+> 👉 **[Read the Full Benchmark & Methodology Report (BENCHMARK_LADYBUG.md)](BENCHMARK_LADYBUG.md)**
+
+#### Reproduce the Benchmark
+```bash
+# Ingest 298k graph entities and execute 100 warmed query iterations:
+go run ./cmd/bench_ladybug -iterations 100 -warmup 10 -bench-ingest=true
+```
+
+### Compiler Microbenchmarks
 ```bash
 go test -bench=. -benchmem
 ```
