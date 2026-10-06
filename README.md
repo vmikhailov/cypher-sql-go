@@ -273,35 +273,49 @@ func main() {
 
 ## Performance & Benchmarks
 
-### Head-to-Head: `cypher-sql-go` (SQLite) vs. LadybugDB (Native C++)
+All performance evaluations follow our standardized **[Unified Benchmark Methodology & Scoring Specification](bench/METHODOLOGY.md)** (SPEC & LDBC style), partitioning queries into **Transactional / Localized (OLTP)** and **Structural / Analytical (OLAP)** suites.
 
-In-process head-to-head benchmark on **100,000 Nodes and 198,000 Relationships (298,000 Graph Entities)**:
-- **Baseline Engine**: LadybugDB v0.21.2 = **100.0 pts**
-- **Evaluation**: 100 warmed iterations per query with strict row parity validation.
+> [!IMPORTANT]
+> **Dataset Scale & Cache Residency Context**:
+> Evaluated on **100,000 Nodes and 198,000 Relationships (298,000 Graph Entities)**.
+> At 5.5 MB – 34.0 MB, the working set resides completely inside **CPU L3 / RAM cache**. This benchmark transparently measures in-process compute, query planning, B-Tree vs. CSR/columnar traversal, and runtime dispatch—rather than out-of-core NVMe disk I/O bottlenecks.
 
-| Benchmark Category | SQLite (Hybrid SQL) Score | LadybugDB Baseline | Advantage |
+### Split Workload Benchmark Summary (SPEC / LDBC Style)
+
+Normalized scoring against native C/C++ embedded baselines (**Target Engine Baseline = 100.0 pts**, Geometric Mean):
+
+| Workload Dimension | `cypher-sql-go` (SQLite) vs. LadybugDB v0.21.2 | `cypher-sql-go` (SQLite) vs. DuckDB v1.2.2 + DuckPGQ | Architectural Rationale |
 | :--- | :---: | :---: | :--- |
-| **Query Execution Index (Geometric Mean)** | **526.2 pts** | 100.0 pts | **5.26x SQLite Faster** (Won 7/7 queries) |
-| **Bulk Data Ingestion (298k Entities)** | **64.4 pts** | 100.0 pts | **1.55x Ladybug Faster** (1.56s vs 1.00s) |
-| **FINAL COMPOSITE BENCHMARK SCORE** | **404.7 pts** | **100.0 pts** | **4.05x OVERALL SPEEDUP** |
+| **[OLTP] Transactional / Localized Traversal Index** | **705.8 pts** (**7.06x SQLite**) | **487.7 pts** (**4.88x SQLite**) | Zero vectorization setup, instant B-Tree seeks, low-overhead tuple pipeline |
+| **[OLAP] Structural / Analytical Traversal Index** | **60.4 pts** (1.65x LadybugDB) | **35.3 pts** (2.83x DuckDB) | CSR edge list compression, columnar SIMD scans, multi-core morsels |
+| **Overall Balanced Query Index (10 Queries)** | **206.5 pts** (**2.07x SQLite**) | **131.3 pts** (**1.31x SQLite**) | Balanced composite across all 10 query archetypes |
+| **Bulk Data Ingestion (298k Entities)** | **37.2 pts** (2.69x LadybugDB) | **13.3 pts** (7.54x DuckDB) | Vectorized columnar CSV parsers (`read_csv_auto`) vs. row-by-row SQL |
+| **On-Disk Database Footprint** | 34.0 MB vs 22.4 MB (LadybugDB) | 34.0 MB vs 5.5 MB (DuckDB) | DuckDB bit-packing & dictionary compression |
 
-#### Query Latency Highlights (100 Warmed Iterations)
+#### Query Latency Highlights (Warmed Iterations)
 
-| Query Pattern | `cypher-sql-go` Compile | SQLite E2E (Total) | LadybugDB (Native) | Speedup / Advantage |
-| :--- | :---: | :---: | :---: | :--- |
-| **Q1: Exact Point Lookup** | 9.26 µs | **0.071 ms** | 0.785 ms | **11.06x SQLite Faster** |
-| **Q2: Filtered Property Scan (LIMIT 50)** | 12.21 µs | **0.387 ms** | 0.898 ms | **2.32x SQLite Faster** |
-| **Q4: 2-Hop Multi-Join Traversal** | 18.27 µs | **0.437 ms** | 12.067 ms | **27.61x SQLite Faster** |
-| **Q5: Variable-Length Path (1..3 hops)** | 20.50 µs | **2.671 ms** | 5.633 ms | **2.11x SQLite Faster** |
-| **Q7: 2-Tier Hierarchy (S->C->M)** | 43.69 µs | **0.543 ms** | 16.190 ms | **29.82x SQLite Faster** |
+| Query Pattern | Category | Go Transpiler | SQLite (Hybrid) | LadybugDB (Native) | DuckDB + PGQ (Native) | Winner |
+| :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| **Q1: Exact Point Lookup** | **OLTP** | `9.1 µs` | **0.063 ms** | 0.977 ms | 0.613 ms | **SQLite (7.5x–15.5x)** |
+| **Q2: Filtered Scan (LIMIT 50)** | **OLTP** | `13.1 µs` | **0.430 ms** | 0.812 ms | 0.658 ms | **SQLite (1.5x–1.9x)** |
+| **Q4: Localized 2-Hop Join (LIMIT 50)**| **OLTP** | `18.5 µs` | **0.404 ms** | 10.621 ms | 3.714 ms | **SQLite (8.2x–26.3x)** |
+| **Q5: Hierarchy Traversal (LIMIT 10)** | **OLTP** | `25.5 µs` | **0.560 ms** | 13.193 ms | 15.442 ms | **SQLite (23.6x–32.0x)** |
+| **Q6: Unconstrained 2-Hop Join** | **OLAP** | `17.6 µs` | 26.316 ms | **8.266 ms** | **4.437 ms** | **DuckDB (5.6x) / Ladybug (3.2x)** |
+| **Q7: Deep Path Expansion (k=1..5)** | **OLAP** | `18.6 µs` | 22.200 ms | **7.421 ms** | **18.123 ms** | **LadybugDB (3.0x)** |
+| **Q8: Global Property Filter Scan** | **OLAP** | `8.1 µs` | 1.233 ms | 1.239 ms | **0.370 ms** | **DuckDB (3.2x)** |
 
-> 📖 **Full Analysis**: For complete execution plans, statistical percentiles (p50/p95/p99), and architectural findings:  
-> 👉 **[Read the Full Benchmark & Methodology Report (bench/ladybug/README.md)](bench/ladybug/README.md)**
+> 📖 **Comprehensive Methodology & Detailed Reports**:
+> - 📐 **[Unified Benchmark Methodology & Scoring Specification](bench/METHODOLOGY.md)**
+> - 📊 **[LadybugDB Head-to-Head Report & Latency Profiles (bench/ladybug/README.md)](bench/ladybug/README.md)**
+> - 🦆 **[DuckDB + DuckPGQ Head-to-Head Report & Latency Profiles (bench/duckdb/README.md)](bench/duckdb/README.md)**
 
-#### Reproduce the Benchmark
+#### Reproduce the Benchmarks
 ```bash
-# Ingest 298k graph entities and execute 100 warmed query iterations:
-go run -tags bench ./bench/ladybug -iterations 100 -warmup 10 -bench-ingest=true
+# Benchmark against LadybugDB (CSR native graph engine):
+make bench-ladybug
+
+# Benchmark against DuckDB + DuckPGQ (columnar SQL/PGQ engine):
+make bench-duckdb
 ```
 
 ### Compiler Microbenchmarks

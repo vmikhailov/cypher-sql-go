@@ -159,7 +159,8 @@ func writeMarkdownReport(filePath string, sqlIngest, lbugIngest IngestResult, re
 	sb.WriteString(fmt.Sprintf("**Date**: %s  \n", time.Now().Format("2006-01-02 15:04:05")))
 	sb.WriteString(fmt.Sprintf("**Platform**: Windows AMD64, Go %s, LadybugDB v0.21.2 (in-process C-ABI)  \n", runtime.Version()))
 	sb.WriteString(fmt.Sprintf("**Dataset**: 100,000 Nodes, 198,000 Relationships (298,000 Graph Entities)  \n"))
-	sb.WriteString(fmt.Sprintf("**Workload Diversity**: 10 Queries (5 Transactional/OLTP + 5 Analytical/OLAP), %d Warmed Iterations each  \n\n", iterations))
+	sb.WriteString(fmt.Sprintf("**Workload Diversity**: 10 Queries (5 Transactional/OLTP + 5 Analytical/OLAP), %d Warmed Iterations each  \n", iterations))
+	sb.WriteString("**Methodology**: In accordance with [Unified Benchmark Methodology & Scoring Specification](../METHODOLOGY.md)  \n\n")
 
 	sb.WriteString("> [!IMPORTANT]\n")
 	sb.WriteString("> **Dataset Scale & Cache Residency Context**:\n")

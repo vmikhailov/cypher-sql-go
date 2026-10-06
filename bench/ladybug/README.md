@@ -4,6 +4,7 @@
 **Platform**: Windows AMD64, Go go1.26.3, LadybugDB v0.21.2 (in-process C-ABI)  
 **Dataset**: 100,000 Nodes, 198,000 Relationships (298,000 Graph Entities)  
 **Workload Diversity**: 10 Queries (5 Transactional/OLTP + 5 Analytical/OLAP), 25 Warmed Iterations each  
+**Methodology**: In accordance with [Unified Benchmark Methodology & Scoring Specification](../METHODOLOGY.md)  
 
 > [!IMPORTANT]
 > **Dataset Scale & Cache Residency Context**:

@@ -68,8 +68,8 @@ func main() {
 		reportPath   string
 	)
 
-	flag.IntVar(&iterations, "iterations", 50, "Number of timed benchmark iterations per query")
-	flag.IntVar(&warmupRuns, "warmup", 5, "Number of warmup iterations per query")
+	flag.IntVar(&iterations, "iterations", 100, "Number of timed benchmark iterations per query")
+	flag.IntVar(&warmupRuns, "warmup", 10, "Number of warmup iterations per query")
 	flag.StringVar(&sqliteDbPath, "sqlite", "C:/Work/Personal/bench_memgraph_sqlite/bench_graph_100k.db", "Path to SQLite 100k database")
 	flag.StringVar(&duckDbPath, "duck", "bench/duckdb/duck_100k.duckdb", "Path to DuckDB database file")
 	flag.StringVar(&dataDir, "data", "bench/ladybug/data", "Path to benchmark CSV data directory")
@@ -121,6 +121,8 @@ func main() {
 
 		duckIngest.Score = 100.0
 		sqliteIngest.Score = (float64(duckIngest.TotalTime) / float64(sqliteIngest.TotalTime)) * 100.0
+
+		printIngestionConsoleReport(sqliteIngest, duckIngest)
 	}
 
 	// Ensure Persistent DuckDB Exists for Phase 2
@@ -320,32 +322,19 @@ func main() {
 		}
 		results = append(results, res)
 
-		winner := speedWinner(toMs(res.DuckAdHoc.Avg), toMs(res.SqliteEndToEnd.Avg))
-		speed := speedRatio(toMs(res.DuckAdHoc.Avg), toMs(res.SqliteEndToEnd.Avg))
-		fmt.Printf("--> SQLite E2E Avg: %.2f ms | DuckDB Ad-Hoc Avg: %.2f ms | Winner: %s (%.1fx) | Rows: SQL=%d, Duck=%d\n",
-			toMs(res.SqliteEndToEnd.Avg), toMs(res.DuckAdHoc.Avg), winner, speed, sqlRows, duckRows)
-	}
-
-	// Calculate Split Metric Scores (OLTP vs OLAP)
-	var oltpScores, olapScores, allScores []float64
-	for _, r := range results {
-		allScores = append(allScores, r.ScoreSqlite)
-		if r.Query.Category == "OLTP" {
-			oltpScores = append(oltpScores, r.ScoreSqlite)
-		} else {
-			olapScores = append(olapScores, r.ScoreSqlite)
+		parity := "✓ MATCH"
+		if sqlRows != duckRows {
+			parity = fmt.Sprintf("MISMATCH (SQLite: %d, DuckDB: %d)", sqlRows, duckRows)
 		}
+
+		printConsoleResult(res, parity)
 	}
-	oltpScore := geometricMean(oltpScores)
-	olapScore := geometricMean(olapScores)
-	overallScore := geometricMean(allScores)
 
-	printConsoleReport(sqliteIngest, duckIngest, results, oltpScore, olapScore, overallScore)
-
+	printSummaryReport(results, sqliteIngest, duckIngest, benchIngest)
 	if reportPath != "" {
-		if err := generateMarkdownReport(reportPath, sqliteIngest, duckIngest, results, oltpScore, olapScore, overallScore); err != nil {
+		if err := writeMarkdownReport(reportPath, sqliteIngest, duckIngest, results, iterations, benchIngest); err != nil {
 			log.Fatalf("Failed to write Markdown report: %v", err)
 		}
-		fmt.Printf("Report saved to %s\n", reportPath)
+		fmt.Printf("\nSaved detailed Markdown report to: %s\n", reportPath)
 	}
 }
