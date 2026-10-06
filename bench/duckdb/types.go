@@ -99,6 +99,25 @@ func geometricMean(values []float64) float64 {
 	return math.Exp(sumLn / float64(len(values)))
 }
 
+func weightedGeometricMean(values []float64, weights []float64) float64 {
+	if len(values) == 0 || len(values) != len(weights) {
+		return 0
+	}
+	var sumWeight, sumWeightedLn float64
+	for i, v := range values {
+		w := weights[i]
+		if v <= 0 {
+			v = 0.0001
+		}
+		sumWeight += w
+		sumWeightedLn += w * math.Log(v)
+	}
+	if sumWeight == 0 {
+		return 0
+	}
+	return math.Exp(sumWeightedLn / sumWeight)
+}
+
 func toMs(d time.Duration) float64 {
 	return float64(d.Microseconds()) / 1000.0
 }

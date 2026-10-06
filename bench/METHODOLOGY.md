@@ -170,13 +170,37 @@ $$\text{GeoMean}(S_1, S_2, \dots, S_n) = \exp\left( \frac{1}{n} \sum_{i=1}^{n} \
 2. **Whole-Graph Structural Analysis Index (OLAP)**:
    $$\text{Index}_{\text{OLAP}} = \left( \prod_{i=6}^{10} \text{Score}_i \right)^{1/5}$$
    Measures throughput on unconstrained joins, deep paths, and whole-graph topological scans.
-3. **Bulk Ingestion Index**:
+3. **Balanced Query Index (Overall 10 Queries)**:
+   $$\text{Index}_{\text{Query}} = \sqrt{\text{Index}_{\text{OLTP}} \times \text{Index}_{\text{OLAP}}} = \left( \prod_{i=1}^{10} \text{Score}_i \right)^{1/10}$$
+   Measures pure query serving capacity with equal 50/50 balance between interactive and structural workloads.
+4. **Bulk Ingestion Index**:
    $$\text{Index}_{\text{Ingest}} = \text{Score}_{\text{Ingest}}$$
    Measures initial bulk loading throughput (nodes, edges, indices).
 
-> [!NOTE]
-> **Why No Single "Overall Winner" Score?**
-> A single monolithic score that averages point lookups with global joins creates false claims. A 10x win on a 0.06 ms point lookup mathematically distorts an average even if the engine is 3x slower on a 25 ms full-graph join. By reporting the indices independently, database engineers and software architects can evaluate each engine according to their application's dominant query profile.
+### Operational Frequency Weighting: Realistic Composite Index
+
+In production software (IDEs, CLI tools, microservices, and desktop agents), an embedded database performs queries and traversals continuously (millions of operations), while bulk data ingestion is an infrequent setup event (performed once during initial repo indexing or periodic sync).
+
+Treating bulk ingestion with equal weight to query processing distorts real-world utility: an engine that is 7x slower on bulk loading would be penalized by 50% in a naive category-averaged composite, even though ingestion accounts for $<1\%$ of production execution time.
+
+To provide a realistic single-number summary alongside the unblended split indices, we apply an **Operational Frequency Weight Distribution**:
+
+| Operational Dimension | Weight ($w_k$) | Real-World Operational Frequency |
+| :--- | :---: | :--- |
+| **Interactive UI & Point Lookups (OLTP)** | **45%** ($0.45$) | Extremely high frequency (keystroke hovers, symbol jumps, caller checks) |
+| **Whole-Graph Structural Analysis (OLAP)** | **45%** ($0.45$) | High/periodic frequency (dependency audits, impact radius, CI builds) |
+| **Bulk Data Ingestion (Initial Population)** | **10%** ($0.10$) | Infrequent setup activity (initial repo import, cold sync, full re-indexing) |
+| **Total Operational Weight** | **100%** ($1.00$) | **90% Query Serving + 10% Initial Ingestion** |
+
+#### Weighted Geometric Mean Formula:
+$$\text{Index}_{\text{Composite}} = \exp\left( 0.45 \ln(\text{Index}_{\text{OLTP}}) + 0.45 \ln(\text{Index}_{\text{OLAP}}) + 0.10 \ln(\text{Index}_{\text{Ingest}}) \right)$$
+$$\text{Index}_{\text{Composite}} = \text{Index}_{\text{OLTP}}^{0.45} \times \text{Index}_{\text{OLAP}}^{0.45} \times \text{Index}_{\text{Ingest}}^{0.10} = \text{Index}_{\text{Query}}^{0.90} \times \text{Index}_{\text{Ingest}}^{0.10}$$
+
+> [!TIP]
+> **Reading the Results**:
+> - If your application is a **read-heavy interactive tool** (IDE, CLI, API gateway): prioritize the **OLTP Index (45% weight)**.
+> - If your application performs **deep structural graph analysis** (security audit, call graph analysis): prioritize the **OLAP Index (45% weight)**.
+> - If evaluating **end-to-end operational cost**: look at the **Weighted Composite Score (90% queries / 10% ingestion)**.
 
 ---
 

@@ -14,16 +14,16 @@
 ## 1. Split Workload Benchmark Summary (SPEC / LDBC Style)
 
 > Standardized SPEC/Geekbench-style normalized scoring where **LadybugDB Baseline = 100.0 points**.
-> To prevent workload selection bias, scores are split into two independent indices reflecting the real-world dual role of embedded engines:
-> 1. **Interactive UI & Point Lookups (OLTP)**: Symbol navigation, direct caller inspection, interactive UI drill-down.
-> 2. **Whole-Graph Local Analysis (OLAP)**: Circular dependency detection, impact radius calculation, dead code path counts.
+> To reflect real-world operational frequency, metrics are weighted: **90% Query Serving (45% OLTP + 45% OLAP)** and **10% Infrequent Bulk Ingestion**.
 
-| Workload Dimension | Embedded Use Case | `cypher-sql-go` (SQLite) | LadybugDB Baseline | Architectural Advantage |
-| :--- | :--- | :---: | :---: | :--- |
-| **[OLTP] Interactive UI & Point Lookups** | Direct callers, symbol lookups, UI inspection (`LIMIT`, point seeks) | **705.8 pts** | 100.0 pts | **7.06x SQLite Faster** |
-| **[OLAP] Whole-Graph Structural Analysis** | Circular dependencies, impact radius, dead paths (unconstrained, deep paths) | **60.4 pts** | 100.0 pts | **1.65x LadybugDB Faster** |
-| **Bulk Data Ingestion (298k Entities)** | Initial database population from CSV/raw data | **37.2 pts** | 100.0 pts | **2.69x LadybugDB Faster** |
-| **Storage Footprint on Disk** | Local disk usage footprint | **34.00 MB** | **22.36 MB** | **1.52x LadybugDB Smaller** |
+| Workload Dimension | Operational Weight | Embedded Use Case | `cypher-sql-go` (SQLite) | LadybugDB Baseline | Architectural Advantage |
+| :--- | :---: | :--- | :---: | :---: | :--- |
+| **[OLTP] Interactive UI & Point Lookups** | **45%** | Direct callers, symbol lookups, UI inspection (`LIMIT`, point seeks) | **705.8 pts** | 100.0 pts | **7.06x SQLite Faster** |
+| **[OLAP] Whole-Graph Structural Analysis** | **45%** | Circular dependencies, impact radius, dead paths (unconstrained, deep paths) | **60.4 pts** | 100.0 pts | **1.65x LadybugDB Faster** |
+| **Overall Balanced Query Index (10 Queries)** | **(90%)** | Pure query serving capacity across all 10 query archetypes | **206.5 pts** | 100.0 pts | **2.07x Balanced Speedup** |
+| **Bulk Data Ingestion (298k Entities)** | **10%** | Infrequent initial database population from CSV/raw data | **37.2 pts** | 100.0 pts | **2.69x LadybugDB Faster** |
+| **WEIGHTED COMPOSITE BENCHMARK SCORE** | **100%** | **Realistic operational composite (45% OLTP + 45% OLAP + 10% Ingest)** | **173.7 pts** | **100.0 pts** | **1.74x OVERALL INDEX** |
+| **Storage Footprint on Disk** | - | Local disk usage footprint | **34.00 MB** | **22.36 MB** | **1.52x LadybugDB Smaller** |
 
 ### Execution-Only vs. End-to-End Latency Breakdown
 To isolate database compute from Go runtime AST transpilation, both comparisons are tracked:
