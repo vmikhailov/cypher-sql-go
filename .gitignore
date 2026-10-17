@@ -46,3 +46,5 @@ bench_data/*.lbug
 bench_data/*.lbug/
 bench_data/*.db
 bench_data/*.duckdb
+bench/**/data/*.csv
+bench_data/*.csv
