@@ -257,6 +257,22 @@ func hasVariable(expr ast.Expression, varName string) bool {
 			(e.Projection != nil && hasVariable(e.Projection, varName))
 	case ast.ListPredicateExpr:
 		return hasVariable(e.List, varName) || hasVariable(e.Predicate, varName)
+	case ast.ListSliceExpr:
+		return hasVariable(e.List, varName) || hasVariable(e.From, varName) || hasVariable(e.To, varName)
+	case ast.ReduceExpr:
+		return hasVariable(e.Initial, varName) || hasVariable(e.List, varName) || hasVariable(e.Expression, varName)
+	case ast.MapProjectionExpr:
+		if hasVariable(e.Base, varName) {
+			return true
+		}
+		for _, el := range e.Elements {
+			if hasVariable(el.Value, varName) {
+				return true
+			}
+		}
+		return false
+	case ast.HasLabelExpr:
+		return hasVariable(e.Node, varName)
 	default:
 		return false
 	}
@@ -305,6 +321,10 @@ func hasVariableOutsideAggregationExpr(expr ast.Expression, varName string, insi
 			}
 		}
 		return false
+	case ast.ListSliceExpr:
+		return hasVariableOutsideAggregationExpr(e.List, varName, insideAgg) ||
+			hasVariableOutsideAggregationExpr(e.From, varName, insideAgg) ||
+			hasVariableOutsideAggregationExpr(e.To, varName, insideAgg)
 	case ast.MapExpr:
 		for _, v := range e.Entries {
 			if hasVariableOutsideAggregationExpr(v, varName, insideAgg) {
@@ -330,6 +350,22 @@ func hasVariableOutsideAggregationExpr(expr ast.Expression, varName string, insi
 	case ast.ListPredicateExpr:
 		return hasVariableOutsideAggregationExpr(e.List, varName, insideAgg) ||
 			hasVariableOutsideAggregationExpr(e.Predicate, varName, insideAgg)
+	case ast.ReduceExpr:
+		return hasVariableOutsideAggregationExpr(e.Initial, varName, insideAgg) ||
+			hasVariableOutsideAggregationExpr(e.List, varName, insideAgg) ||
+			hasVariableOutsideAggregationExpr(e.Expression, varName, insideAgg)
+	case ast.MapProjectionExpr:
+		if hasVariableOutsideAggregationExpr(e.Base, varName, insideAgg) {
+			return true
+		}
+		for _, el := range e.Elements {
+			if hasVariableOutsideAggregationExpr(el.Value, varName, insideAgg) {
+				return true
+			}
+		}
+		return false
+	case ast.HasLabelExpr:
+		return hasVariableOutsideAggregationExpr(e.Node, varName, insideAgg)
 	default:
 		return false
 	}

@@ -20,7 +20,8 @@ func (c *Compiler) visitExpression(expr ast.Expression) (string, error) {
 	case ast.LiteralExpr:
 		return c.visitLiteral(e), nil
 	case ast.ParameterExpr:
-		return "@" + e.Name, nil
+		c.paramIndex++
+		return c.schema.Dialect.ParamPlaceholder(e.Name, c.paramIndex), nil
 	case ast.BinaryExpr:
 		return c.visitBinary(e)
 	case ast.UnaryExpr:
@@ -49,6 +50,12 @@ func (c *Compiler) visitExpression(expr ast.Expression) (string, error) {
 		return c.visitMapProjection(e)
 	case ast.ReduceExpr:
 		return c.visitReduce(e)
+	case ast.ListSliceExpr:
+		return c.visitListSlice(e)
+	case ast.ExistsSubqueryExpr:
+		return c.visitExistsSubquery(e)
+	case ast.CountSubqueryExpr:
+		return c.visitCountSubquery(e)
 	default:
 		return "", fmt.Errorf("unsupported expression type: %T", expr)
 	}
@@ -60,39 +67,79 @@ func (c *Compiler) visitIdentifier(id ast.IdentifierExpr) string {
 	}
 	escaped := c.escapeVar(id.Name)
 	if c.unwindVariables[id.Name] {
+		if c.schema.Dialect.Name() == "clickhouse" {
+			return escaped
+		}
 		return escaped + ".value"
 	}
 	if c.declaredNodes[id.Name] {
-		return "json_object('id', " + escaped + "." + c.schema.NodeIDCol + ", 'kind', " +
-			escaped + "." + c.schema.NodeKindCol + ", 'properties', json(" +
-			escaped + "." + c.schema.NodePropsCol + "))"
+		return c.schema.Dialect.JSONObject([]KeyValuePair{
+			{Key: "id", Value: c.getNodeIDSQL(id.Name)},
+			{Key: "kind", Value: c.getNodeKindSQL(id.Name)},
+			{Key: "properties", Value: c.renderEntityProperties(c.getNodePropsSQL(id.Name))},
+		})
+	}
+	if c.varLenRels[id.Name] {
+		return c.schema.Dialect.JSONObject([]KeyValuePair{
+			{Key: "from", Value: escaped + ".start_id"},
+			{Key: "to", Value: escaped + ".end_id"},
+			{Key: "depth", Value: escaped + ".depth"},
+		})
 	}
 	if c.declaredRels[id.Name] {
-		return "json_object('type', " + escaped + "." + c.schema.EdgeKindCol + ", 'from', " +
-			escaped + "." + c.schema.EdgeFromCol + ", 'to', " + escaped + "." + c.schema.EdgeToCol +
-			", 'properties', json(" + escaped + "." + c.schema.EdgePropsCol + "))"
+		return c.schema.Dialect.JSONObject([]KeyValuePair{
+			{Key: "type", Value: escaped + "." + c.schema.EdgeKindCol},
+			{Key: "from", Value: escaped + "." + c.schema.EdgeFromCol},
+			{Key: "to", Value: escaped + "." + c.schema.EdgeToCol},
+			{Key: "properties", Value: c.renderEntityProperties(escaped + "." + c.schema.EdgePropsCol)},
+		})
 	}
 	return escaped
 }
 
 func (c *Compiler) visitPropertyAccess(prop ast.PropertyAccessExpr) string {
+	return c.visitPropertyAccessTyped(prop, false)
+}
+
+func (c *Compiler) visitPropertyAccessTyped(prop ast.PropertyAccessExpr, numeric bool) string {
 	v := c.escapeVar(prop.Variable)
 	propName := prop.Property
+	extractFn := c.schema.Dialect.JSONExtract
+	if numeric {
+		extractFn = c.schema.Dialect.JSONExtractNumber
+	}
 
 	if c.unwindVariables[prop.Variable] {
+		valCol := v + ".value"
+		if c.schema.Dialect.Name() == "clickhouse" {
+			valCol = v
+		}
 		if strings.EqualFold(propName, "id") {
-			return "COALESCE(json_extract(" + v + ".value, '$.id'), " + v + ".value)"
+			return "COALESCE(" + c.schema.Dialect.JSONExtract(valCol, "id") + ", " + valCol + ")"
 		}
 		if strings.EqualFold(propName, "kind") {
-			return "COALESCE(json_extract(" + v + ".value, '$.kind'), " + v + ".value)"
+			return "COALESCE(" + c.schema.Dialect.JSONExtract(valCol, "kind") + ", " + valCol + ")"
 		}
-		return "COALESCE(json_extract(" + v + ".value, '$.properties." + propName + "'), " +
-			"json_extract(" + v + ".value, '$." + propName + "'))"
+		return "COALESCE(" + extractFn(c.schema.Dialect.JSONExtract(valCol, "properties"), propName) + ", " +
+			extractFn(valCol, propName) + ")"
 	}
 
 	if withSQL, ok := c.withAliases[prop.Variable]; ok {
-		return "COALESCE(json_extract(" + withSQL + ", '$.properties." + propName + "'), " +
-			"json_extract(" + withSQL + ", '$." + propName + "'))"
+		return "COALESCE(" + extractFn(c.schema.Dialect.JSONExtract(withSQL, "properties"), propName) + ", " +
+			extractFn(withSQL, propName) + ")"
+	}
+
+	if c.varLenRels[prop.Variable] {
+		switch strings.ToLower(propName) {
+		case "from", "from_id", "start_id":
+			return v + ".start_id"
+		case "to", "to_id", "end_id":
+			return v + ".end_id"
+		case "depth", "length":
+			return v + ".depth"
+		default:
+			return v + ".depth"
+		}
 	}
 
 	if c.declaredRels[prop.Variable] {
@@ -108,20 +155,52 @@ func (c *Compiler) visitPropertyAccess(prop ast.PropertyAccessExpr) string {
 		case "properties":
 			return v + "." + c.schema.EdgePropsCol
 		default:
-			return c.schema.Dialect.JSONExtract(v+"."+c.schema.EdgePropsCol, propName)
+			return extractFn(v+"."+c.schema.EdgePropsCol, propName)
 		}
 	}
 
 	switch strings.ToLower(propName) {
 	case "id":
-		return v + "." + c.schema.NodeIDCol
+		return c.getNodeIDSQL(prop.Variable)
 	case "kind":
-		return v + "." + c.schema.NodeKindCol
+		return c.getNodeKindSQL(prop.Variable)
 	case "properties":
-		return v + "." + c.schema.NodePropsCol
+		return c.getNodePropsSQL(prop.Variable)
 	default:
-		return c.schema.Dialect.JSONExtract(v+"."+c.schema.NodePropsCol, propName)
+		return extractFn(c.getNodePropsSQL(prop.Variable), propName)
 	}
+}
+
+func (c *Compiler) isNumericExpr(expr ast.Expression) bool {
+	if expr == nil {
+		return false
+	}
+	switch e := expr.(type) {
+	case ast.LiteralExpr:
+		return e.Kind == ast.LiteralNumber
+	case ast.UnaryExpr:
+		return e.Op == ast.OpMinus || e.Op == ast.OpPlus
+	case ast.BinaryExpr:
+		switch e.Op {
+		case ast.OpAdd, ast.OpSub, ast.OpMul, ast.OpDiv, ast.OpMod:
+			return true
+		}
+	case ast.FunctionCallExpr:
+		switch strings.ToLower(e.Name) {
+		case "count", "sum", "avg", "size", "length", "tointeger", "toint", "tofloat":
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Compiler) visitExpressionContextual(expr ast.Expression, numeric bool) (string, error) {
+	if numeric {
+		if prop, ok := expr.(ast.PropertyAccessExpr); ok {
+			return c.visitPropertyAccessTyped(prop, true), nil
+		}
+	}
+	return c.visitExpression(expr)
 }
 
 func (c *Compiler) visitLiteral(lit ast.LiteralExpr) string {
@@ -147,11 +226,17 @@ func (c *Compiler) visitLiteral(lit ast.LiteralExpr) string {
 }
 
 func (c *Compiler) visitBinary(b ast.BinaryExpr) (string, error) {
-	leftSQL, err := c.visitExpression(b.Left)
+	isArith := b.Op == ast.OpAdd || b.Op == ast.OpSub || b.Op == ast.OpMul || b.Op == ast.OpDiv || b.Op == ast.OpMod
+	isComp := b.Op == ast.OpEq || b.Op == ast.OpNeq || b.Op == ast.OpLt || b.Op == ast.OpLte || b.Op == ast.OpGt || b.Op == ast.OpGte
+
+	leftNumeric := isArith || (isComp && c.isNumericExpr(b.Right))
+	rightNumeric := isArith || (isComp && c.isNumericExpr(b.Left))
+
+	leftSQL, err := c.visitExpressionContextual(b.Left, leftNumeric)
 	if err != nil {
 		return "", err
 	}
-	rightSQL, err := c.visitExpression(b.Right)
+	rightSQL, err := c.visitExpressionContextual(b.Right, rightNumeric)
 	if err != nil {
 		return "", err
 	}
@@ -242,15 +327,15 @@ func (c *Compiler) visitList(l ast.ListExpr) (string, error) {
 }
 
 func (c *Compiler) visitMap(m ast.MapExpr) (string, error) {
-	var pairs []string
+	var pairs []KeyValuePair
 	for k, v := range m.Entries {
 		vSQL, err := c.visitExpression(v)
 		if err != nil {
 			return "", err
 		}
-		pairs = append(pairs, "'"+SanitizeSQLLiteral(k)+"', "+vSQL)
+		pairs = append(pairs, KeyValuePair{Key: SanitizeSQLLiteral(k), Value: vSQL})
 	}
-	return "json_object(" + strings.Join(pairs, ", ") + ")", nil
+	return c.schema.Dialect.JSONObject(pairs), nil
 }
 
 func (c *Compiler) visitPatternExpr(pat ast.PatternExpr) (string, error) {
@@ -267,9 +352,38 @@ func (c *Compiler) visitPatternExpr(pat ast.PatternExpr) (string, error) {
 
 func (c *Compiler) visitPatternComprehension(pc ast.PatternComprehensionExpr) (string, error) {
 	fromJoins, conditions := c.buildSubqueryPath(pc.Path, "_pc")
+
+	var addedNodes []string
+	var addedRels []string
+	if pc.Path.Head.Variable != "" && !c.declaredNodes[pc.Path.Head.Variable] {
+		c.declaredNodes[pc.Path.Head.Variable] = true
+		addedNodes = append(addedNodes, pc.Path.Head.Variable)
+	}
+	for _, elem := range pc.Path.Chain {
+		if elem.Relationship.Variable != "" && !c.declaredRels[elem.Relationship.Variable] {
+			c.declaredRels[elem.Relationship.Variable] = true
+			addedRels = append(addedRels, elem.Relationship.Variable)
+		}
+		if elem.Target.Variable != "" && !c.declaredNodes[elem.Target.Variable] {
+			c.declaredNodes[elem.Target.Variable] = true
+			addedNodes = append(addedNodes, elem.Target.Variable)
+		}
+	}
+	defer func() {
+		for _, n := range addedNodes {
+			delete(c.declaredNodes, n)
+		}
+		for _, r := range addedRels {
+			delete(c.declaredRels, r)
+		}
+	}()
+
 	if pc.Filter != nil {
 		fSQL, err := c.visitExpression(pc.Filter)
-		if err == nil && fSQL != "" {
+		if err != nil {
+			return "", err
+		}
+		if fSQL != "" {
 			conditions = append(conditions, fSQL)
 		}
 	}
@@ -281,7 +395,7 @@ func (c *Compiler) visitPatternComprehension(pc ast.PatternComprehensionExpr) (s
 	if len(conditions) > 0 {
 		whereSQL = strings.Join(conditions, " AND ")
 	}
-	return RenderCollectSubquery(&SubqueryModel{
+	return c.schema.Dialect.RenderCollectSubquery(&SubqueryModel{
 		Projection: projSQL,
 		FromJoins:  fromJoins,
 		Where:      whereSQL,
@@ -324,6 +438,9 @@ func (c *Compiler) visitListComprehension(comp ast.ListComprehensionExpr) (strin
 		}
 	}
 	projSQL := comp.Variable + ".value"
+	if c.schema.Dialect.Name() == "clickhouse" {
+		projSQL = comp.Variable
+	}
 	if comp.Projection != nil {
 		pSQL, err := c.visitExpression(comp.Projection)
 		if err == nil {
@@ -393,8 +510,12 @@ func (c *Compiler) visitHasLabel(hl ast.HasLabelExpr) (string, error) {
 
 func (c *Compiler) visitMapProjection(mp ast.MapProjectionExpr) (string, error) {
 	baseVar := ""
+	isDeclaredNode := false
+	rawVar := ""
 	if id, ok := mp.Base.(ast.IdentifierExpr); ok {
+		rawVar = id.Name
 		baseVar = c.escapeVar(id.Name)
+		isDeclaredNode = c.declaredNodes[id.Name]
 	} else {
 		s, err := c.visitExpression(mp.Base)
 		if err != nil {
@@ -418,11 +539,23 @@ func (c *Compiler) visitMapProjection(mp ast.MapProjectionExpr) (string, error) 
 			propSQL := ""
 			switch strings.ToLower(elem.PropertyName) {
 			case strings.ToLower(c.schema.NodeIDCol), "id":
-				propSQL = baseVar + "." + c.schema.NodeIDCol
+				if isDeclaredNode {
+					propSQL = c.getNodeIDSQL(rawVar)
+				} else {
+					propSQL = baseVar + "." + c.schema.NodeIDCol
+				}
 			case strings.ToLower(c.schema.NodeKindCol), "kind":
-				propSQL = baseVar + "." + c.schema.NodeKindCol
+				if isDeclaredNode {
+					propSQL = c.getNodeKindSQL(rawVar)
+				} else {
+					propSQL = baseVar + "." + c.schema.NodeKindCol
+				}
 			default:
-				propSQL = c.schema.Dialect.JSONExtract(baseVar+"."+c.schema.NodePropsCol, elem.PropertyName)
+				if isDeclaredNode {
+					propSQL = c.schema.Dialect.JSONExtract(c.getNodePropsSQL(rawVar), elem.PropertyName)
+				} else {
+					propSQL = c.schema.Dialect.JSONExtract(baseVar+"."+c.schema.NodePropsCol, elem.PropertyName)
+				}
 			}
 			pairs = append(pairs, KeyValuePair{Key: elem.PropertyName, Value: propSQL})
 		}
@@ -439,40 +572,284 @@ func (c *Compiler) visitReduce(red ast.ReduceExpr) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if c.schema.Dialect.Name() == "clickhouse" {
+		trimmed := strings.TrimSpace(listSQL)
+		if strings.HasPrefix(trimmed, "[") {
+			return "(" + initSQL + " + arraySum(" + listSQL + "))", nil
+		}
+		return "(" + initSQL + " + arraySum(JSONExtract(" + listSQL + ", 'Array(Float64)')))", nil
+	}
 	return "(" + initSQL + " + COALESCE((SELECT sum(value) FROM json_each(" + listSQL + ")), 0))", nil
+}
+
+func tryGetIntLiteral(expr ast.Expression) (int64, bool) {
+	if expr == nil {
+		return 0, false
+	}
+	if lit, ok := expr.(ast.LiteralExpr); ok && lit.Kind == ast.LiteralNumber && lit.IsInteger {
+		return int64(lit.NumVal), true
+	}
+	if u, ok := expr.(ast.UnaryExpr); ok && u.Op == ast.OpMinus {
+		if lit, ok := u.Operand.(ast.LiteralExpr); ok && lit.Kind == ast.LiteralNumber && lit.IsInteger {
+			return -int64(lit.NumVal), true
+		}
+	}
+	return 0, false
+}
+
+func (c *Compiler) visitListSlice(slice ast.ListSliceExpr) (string, error) {
+	listSQL, err := c.visitExpression(slice.List)
+	if err != nil {
+		return "", err
+	}
+
+	var conds []string
+	if slice.From != nil {
+		fromSQL, err := c.visitExpression(slice.From)
+		if err != nil {
+			return "", err
+		}
+		if fromInt, ok := tryGetIntLiteral(slice.From); ok {
+			if fromInt < 0 {
+				conds = append(conds, fmt.Sprintf("CAST(key AS INTEGER) >= (json_array_length(%s) + (%d))", listSQL, fromInt))
+			} else {
+				conds = append(conds, fmt.Sprintf("CAST(key AS INTEGER) >= %d", fromInt))
+			}
+		} else {
+			conds = append(conds, fmt.Sprintf("CAST(key AS INTEGER) >= (CASE WHEN (%s) < 0 THEN json_array_length(%s) + (%s) ELSE (%s) END)", fromSQL, listSQL, fromSQL, fromSQL))
+		}
+	}
+	if slice.To != nil {
+		toSQL, err := c.visitExpression(slice.To)
+		if err != nil {
+			return "", err
+		}
+		if toInt, ok := tryGetIntLiteral(slice.To); ok {
+			if toInt < 0 {
+				conds = append(conds, fmt.Sprintf("CAST(key AS INTEGER) < (json_array_length(%s) + (%d))", listSQL, toInt))
+			} else {
+				conds = append(conds, fmt.Sprintf("CAST(key AS INTEGER) < %d", toInt))
+			}
+		} else {
+			conds = append(conds, fmt.Sprintf("CAST(key AS INTEGER) < (CASE WHEN (%s) < 0 THEN json_array_length(%s) + (%s) ELSE (%s) END)", toSQL, listSQL, toSQL, toSQL))
+		}
+	}
+	whereClause := ""
+	if len(conds) > 0 {
+		whereClause = " WHERE " + strings.Join(conds, " AND ")
+	}
+	return fmt.Sprintf("COALESCE((SELECT json_group_array(value) FROM json_each(%s)%s), json_array())", listSQL, whereClause), nil
+}
+
+func (c *Compiler) visitExistsSubquery(exists ast.ExistsSubqueryExpr) (string, error) {
+	return c.compileCorrelatedSubquery(exists.FullQuery, exists.Matches, exists.Where, true)
+}
+
+func (c *Compiler) visitCountSubquery(count ast.CountSubqueryExpr) (string, error) {
+	return c.compileCorrelatedSubquery(count.FullQuery, count.Matches, count.Where, false)
+}
+
+func (c *Compiler) compileCorrelatedSubquery(subQuery *ast.Query, matches []ast.MatchClause, whereExpr ast.Expression, isExists bool) (string, error) {
+	if subQuery == nil {
+		var fromParts []string
+		var allConds []string
+		var addedNodes []string
+		var addedRels []string
+
+		for _, m := range matches {
+			for _, p := range m.Paths {
+				fj, conds := c.buildSubqueryPath(p, "_sq")
+				if fj != "" {
+					fromParts = append(fromParts, fj)
+				}
+				allConds = append(allConds, conds...)
+
+				if p.Head.Variable != "" && !c.declaredNodes[p.Head.Variable] {
+					c.declaredNodes[p.Head.Variable] = true
+					addedNodes = append(addedNodes, p.Head.Variable)
+				}
+				for _, elem := range p.Chain {
+					if elem.Relationship.Variable != "" && !c.declaredRels[elem.Relationship.Variable] {
+						c.declaredRels[elem.Relationship.Variable] = true
+						addedRels = append(addedRels, elem.Relationship.Variable)
+					}
+					if elem.Target.Variable != "" && !c.declaredNodes[elem.Target.Variable] {
+						c.declaredNodes[elem.Target.Variable] = true
+						addedNodes = append(addedNodes, elem.Target.Variable)
+					}
+				}
+			}
+			if m.Where != nil {
+				wSQL, err := c.visitExpression(m.Where)
+				if err != nil {
+					for _, n := range addedNodes {
+						delete(c.declaredNodes, n)
+					}
+					for _, r := range addedRels {
+						delete(c.declaredRels, r)
+					}
+					return "", err
+				}
+				if wSQL != "" {
+					allConds = append(allConds, wSQL)
+				}
+			}
+		}
+
+		if whereExpr != nil {
+			wSQL, err := c.visitExpression(whereExpr)
+			if err != nil {
+				for _, n := range addedNodes {
+					delete(c.declaredNodes, n)
+				}
+				for _, r := range addedRels {
+					delete(c.declaredRels, r)
+				}
+				return "", err
+			}
+			if wSQL != "" {
+				allConds = append(allConds, wSQL)
+			}
+		}
+
+		for _, n := range addedNodes {
+			delete(c.declaredNodes, n)
+		}
+		for _, r := range addedRels {
+			delete(c.declaredRels, r)
+		}
+
+		fromJoins := strings.Join(fromParts, " CROSS JOIN ")
+		whereSQL := ""
+		if len(allConds) > 0 {
+			whereSQL = strings.Join(allConds, " AND ")
+		}
+
+		if isExists {
+			return RenderExistsSubquery(&SubqueryModel{
+				FromJoins: fromJoins,
+				Where:     whereSQL,
+			}), nil
+		}
+		return RenderCountSubquery(&SubqueryModel{
+			Target:    "*",
+			FromJoins: fromJoins,
+			Where:     whereSQL,
+		}), nil
+	}
+
+	qCopy := *subQuery
+	if len(qCopy.Return.Items) == 0 {
+		qCopy.Return = ast.ReturnClause{
+			Items: []ast.ProjectionItem{
+				{
+					Expression: ast.LiteralExpr{Kind: ast.LiteralNumber, NumVal: 1, IsInteger: true},
+				},
+			},
+		}
+	}
+
+	subCompiler := NewCompilerWithOptions(&qCopy, c.initialParams, c.schema)
+	subCompiler.varIndex = c.varIndex + 100
+	subCompiler.paramIndex = c.paramIndex
+	for k, v := range c.declaredNodes {
+		subCompiler.declaredNodes[k] = v
+	}
+	for k, v := range c.declaredRels {
+		subCompiler.declaredRels[k] = v
+	}
+	for k, v := range c.varLenRels {
+		subCompiler.varLenRels[k] = v
+	}
+	for k, v := range c.unwindVariables {
+		subCompiler.unwindVariables[k] = v
+	}
+	for k, v := range c.withAliases {
+		subCompiler.withAliases[k] = v
+	}
+	for k, v := range c.varAliases {
+		subCompiler.varAliases[k] = v
+	}
+	for k, v := range c.nodeIDSource {
+		subCompiler.nodeIDSource[k] = v
+	}
+	for k, v := range c.nodeKindSource {
+		subCompiler.nodeKindSource[k] = v
+	}
+	for k, v := range c.nodePropsSource {
+		subCompiler.nodePropsSource[k] = v
+	}
+
+	compiledSub, err := subCompiler.Compile()
+	if err != nil {
+		return "", err
+	}
+	c.varIndex = subCompiler.varIndex
+	c.paramIndex = subCompiler.paramIndex
+
+	if isExists {
+		return "EXISTS (" + compiledSub.SQL + ")", nil
+	}
+	return "(SELECT COUNT(*) FROM (" + compiledSub.SQL + ") _sq)", nil
 }
 
 func (c *Compiler) buildSubqueryPath(path ast.PathPattern, prefix string) (string, []string) {
 	var conditions []string
 	var fromJoins strings.Builder
 
-	headVar := path.Head.Variable
-	headIsOuter := headVar != "" && c.declaredNodes[headVar]
+	rawHeadVar := path.Head.Variable
+	headIsOuter := rawHeadVar != "" && c.declaredNodes[rawHeadVar]
 
-	actualHeadVar := headVar
-	if !headIsOuter {
+	var actualHeadVar string
+	if rawHeadVar != "" {
+		actualHeadVar = c.escapeVar(rawHeadVar)
+	} else {
 		c.varIndex++
 		actualHeadVar = prefix + "_h" + strconv.Itoa(c.varIndex)
+	}
+
+	if !headIsOuter {
 		fromJoins.WriteString(c.schema.NodesTable)
 		fromJoins.WriteString(" ")
 		fromJoins.WriteString(actualHeadVar)
 		c.addNodeFiltersToConditions(path.Head, actualHeadVar, &conditions)
+	} else if len(path.Chain) == 0 {
+		c.varIndex++
+		innerHead := prefix + "_h" + strconv.Itoa(c.varIndex)
+		fromJoins.WriteString(c.schema.NodesTable)
+		fromJoins.WriteString(" ")
+		fromJoins.WriteString(innerHead)
+		conditions = append(conditions, innerHead+"."+c.schema.NodeIDCol+" = "+c.getNodeIDSQL(rawHeadVar))
+		c.addNodeFiltersToConditions(path.Head, innerHead, &conditions)
 	}
 
 	prevVar := actualHeadVar
-	for _, elem := range path.Chain {
-		c.varIndex++
-		relVar := prefix + "_r" + strconv.Itoa(c.varIndex)
-		targetNode := elem.Target
-		targetVar := targetNode.Variable
-		targetIsOuter := targetVar != "" && c.declaredNodes[targetVar]
+	prevRawVar := rawHeadVar
+	prevIsOuter := headIsOuter
 
-		actualTargetVar := targetVar
+	for _, elem := range path.Chain {
+		rawRelVar := elem.Relationship.Variable
+		var relVar string
+		if rawRelVar != "" && !c.declaredRels[rawRelVar] {
+			relVar = c.escapeVar(rawRelVar)
+		} else {
+			c.varIndex++
+			relVar = prefix + "_r" + strconv.Itoa(c.varIndex)
+		}
+
+		targetNode := elem.Target
+		rawTargetVar := targetNode.Variable
+		targetIsOuter := rawTargetVar != "" && c.declaredNodes[rawTargetVar]
+
+		var actualTargetVar string
+		if rawTargetVar != "" {
+			actualTargetVar = c.escapeVar(rawTargetVar)
+		} else {
+			c.varIndex++
+			actualTargetVar = prefix + "_t" + strconv.Itoa(c.varIndex)
+		}
+
 		if !targetIsOuter {
-			if targetVar == "" {
-				c.varIndex++
-				actualTargetVar = prefix + "_t" + strconv.Itoa(c.varIndex)
-			}
 			if fromJoins.Len() == 0 {
 				fromJoins.WriteString(c.schema.EdgesTable)
 				fromJoins.WriteString(" ")
@@ -503,10 +880,17 @@ func (c *Compiler) buildSubqueryPath(path ast.PathPattern, prefix string) (strin
 				fromJoins.WriteString(" ")
 				fromJoins.WriteString(relVar)
 			}
+			c.addNodeFiltersToConditions(targetNode, actualTargetVar, &conditions)
 		}
 
 		prevIDSrc := prevVar + "." + c.schema.NodeIDCol
+		if prevIsOuter && prevRawVar != "" {
+			prevIDSrc = c.getNodeIDSQL(prevRawVar)
+		}
 		targetIDSrc := actualTargetVar + "." + c.schema.NodeIDCol
+		if targetIsOuter && rawTargetVar != "" {
+			targetIDSrc = c.getNodeIDSQL(rawTargetVar)
+		}
 
 		switch elem.Relationship.Direction {
 		case ast.DirectionOutgoing:
@@ -560,6 +944,8 @@ func (c *Compiler) buildSubqueryPath(path ast.PathPattern, prefix string) (strin
 		}
 
 		prevVar = actualTargetVar
+		prevRawVar = rawTargetVar
+		prevIsOuter = targetIsOuter
 	}
 
 	return fromJoins.String(), conditions
@@ -585,6 +971,48 @@ func (c *Compiler) hasAggregation(expr ast.Expression) bool {
 		return c.hasAggregation(e.Left) || c.hasAggregation(e.Right)
 	case ast.UnaryExpr:
 		return c.hasAggregation(e.Operand)
+	case ast.ListExpr:
+		for _, item := range e.Items {
+			if c.hasAggregation(item) {
+				return true
+			}
+		}
+		return false
+	case ast.ListSliceExpr:
+		return c.hasAggregation(e.List) || c.hasAggregation(e.From) || c.hasAggregation(e.To)
+	case ast.CaseExpr:
+		if c.hasAggregation(e.Test) || c.hasAggregation(e.Else) {
+			return true
+		}
+		for _, w := range e.WhenBranches {
+			if c.hasAggregation(w.When) || c.hasAggregation(w.Then) {
+				return true
+			}
+		}
+		return false
+	case ast.ListComprehensionExpr:
+		return c.hasAggregation(e.List) || c.hasAggregation(e.Filter) || c.hasAggregation(e.Projection)
+	case ast.ListPredicateExpr:
+		return c.hasAggregation(e.List) || c.hasAggregation(e.Predicate)
+	case ast.ReduceExpr:
+		return c.hasAggregation(e.Initial) || c.hasAggregation(e.List) || c.hasAggregation(e.Expression)
+	case ast.MapExpr:
+		for _, v := range e.Entries {
+			if c.hasAggregation(v) {
+				return true
+			}
+		}
+		return false
+	case ast.MapProjectionExpr:
+		if c.hasAggregation(e.Base) {
+			return true
+		}
+		for _, el := range e.Elements {
+			if c.hasAggregation(el.Value) {
+				return true
+			}
+		}
+		return false
 	default:
 		return false
 	}
@@ -618,5 +1046,95 @@ func (c *Compiler) collectIdentifiers(expr ast.Expression, set map[string]bool) 
 		for _, a := range e.Items {
 			c.collectIdentifiers(a, set)
 		}
+	case ast.ListSliceExpr:
+		c.collectIdentifiers(e.List, set)
+		c.collectIdentifiers(e.From, set)
+		c.collectIdentifiers(e.To, set)
+	case ast.CaseExpr:
+		c.collectIdentifiers(e.Test, set)
+		for _, w := range e.WhenBranches {
+			c.collectIdentifiers(w.When, set)
+			c.collectIdentifiers(w.Then, set)
+		}
+		c.collectIdentifiers(e.Else, set)
+	case ast.ListComprehensionExpr:
+		c.collectIdentifiers(e.List, set)
+		c.collectIdentifiers(e.Filter, set)
+		c.collectIdentifiers(e.Projection, set)
+	case ast.ListPredicateExpr:
+		c.collectIdentifiers(e.List, set)
+		c.collectIdentifiers(e.Predicate, set)
+	case ast.ReduceExpr:
+		c.collectIdentifiers(e.Initial, set)
+		c.collectIdentifiers(e.List, set)
+		c.collectIdentifiers(e.Expression, set)
+	case ast.MapExpr:
+		for _, v := range e.Entries {
+			c.collectIdentifiers(v, set)
+		}
+	case ast.MapProjectionExpr:
+		c.collectIdentifiers(e.Base, set)
+		for _, el := range e.Elements {
+			c.collectIdentifiers(el.Value, set)
+		}
+	case ast.HasLabelExpr:
+		c.collectIdentifiers(e.Node, set)
+	case ast.PatternComprehensionExpr:
+		if e.Path.Head.Variable != "" {
+			set[e.Path.Head.Variable] = true
+		}
+		for _, elem := range e.Path.Chain {
+			if elem.Relationship.Variable != "" {
+				set[elem.Relationship.Variable] = true
+			}
+			if elem.Target.Variable != "" {
+				set[elem.Target.Variable] = true
+			}
+		}
+		c.collectIdentifiers(e.Filter, set)
+		c.collectIdentifiers(e.Projection, set)
+	case ast.ExistsSubqueryExpr:
+		c.collectSubqueryIdentifiers(e.FullQuery, e.Matches, e.Where, set)
+	case ast.CountSubqueryExpr:
+		c.collectSubqueryIdentifiers(e.FullQuery, e.Matches, e.Where, set)
+	}
+}
+
+func (c *Compiler) collectSubqueryIdentifiers(subQuery *ast.Query, matches []ast.MatchClause, whereExpr ast.Expression, set map[string]bool) {
+	for _, m := range matches {
+		for _, p := range m.Paths {
+			if p.Head.Variable != "" {
+				set[p.Head.Variable] = true
+			}
+			for _, elem := range p.Chain {
+				if elem.Relationship.Variable != "" {
+					set[elem.Relationship.Variable] = true
+				}
+				if elem.Target.Variable != "" {
+					set[elem.Target.Variable] = true
+				}
+			}
+		}
+		c.collectIdentifiers(m.Where, set)
+	}
+	c.collectIdentifiers(whereExpr, set)
+	if subQuery != nil {
+		for _, m := range subQuery.Matches {
+			for _, p := range m.Paths {
+				if p.Head.Variable != "" {
+					set[p.Head.Variable] = true
+				}
+				for _, elem := range p.Chain {
+					if elem.Relationship.Variable != "" {
+						set[elem.Relationship.Variable] = true
+					}
+					if elem.Target.Variable != "" {
+						set[elem.Target.Variable] = true
+					}
+				}
+			}
+			c.collectIdentifiers(m.Where, set)
+		}
+		c.collectIdentifiers(subQuery.Where, set)
 	}
 }

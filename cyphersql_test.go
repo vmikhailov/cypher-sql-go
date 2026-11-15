@@ -466,3 +466,94 @@ func BenchmarkCompile(b *testing.B) {
 		}
 	}
 }
+
+func TestClickHouseDialect_Comprehensive(t *testing.T) {
+	cfg := cyphersql.ClickHouseSchemaConfig()
+
+	t.Run("NumericComparisonsAndAggregations_BOMRollup", func(t *testing.T) {
+		cypher := `
+			MATCH (v:Vehicle {id: $vehicleId})-[r:HAS_PART]->(p:ObservedPart)
+			WHERE p.mass_kg > 1.5 AND r.quantity >= 2
+			RETURN v.model AS model,
+			       count(p) AS partCount,
+			       count(r) AS relCount,
+			       sum(p.cost_eur) AS totalCost,
+			       avg(p.mass_kg) AS avgMass,
+			       toInteger(p.tier) AS tierInt,
+			       toFloat(p.weight) AS weightFloat,
+			       toString(p.code) AS codeStr
+		`
+		compiled, err := cyphersql.CompileWithSchema(cypher, cfg)
+		if err != nil {
+			t.Fatalf("compile failed: %v", err)
+		}
+
+		expectedSnippets := []string{
+			"{vehicleId:String}",
+			"JSONExtractFloat(p.properties, 'mass_kg') > 1.5",
+			"JSONExtractFloat(r.properties, 'quantity') >= 2",
+			"COUNT(r.from_id)",
+			"sum(JSONExtractFloat(p.properties, 'cost_eur'))",
+			"avg(JSONExtractFloat(p.properties, 'mass_kg'))",
+			"toInt64OrZero(JSONExtractFloat(p.properties, 'tier'))",
+			"toFloat64OrZero(JSONExtractFloat(p.properties, 'weight'))",
+			"toString(JSONExtractString(p.properties, 'code'))",
+		}
+		for _, snip := range expectedSnippets {
+			if !strings.Contains(compiled.SQL, snip) {
+				t.Errorf("expected ClickHouse SQL to contain %q, got:\n%s", snip, compiled.SQL)
+			}
+		}
+		if strings.Contains(compiled.SQL, ".rowid") {
+			t.Errorf("ClickHouse SQL must not reference SQLite .rowid:\n%s", compiled.SQL)
+		}
+	})
+
+	t.Run("VariableLengthPath_PositionAndNodes", func(t *testing.T) {
+		cypher := `
+			MATCH p = (v:Vehicle {id: 'v:1'})-[:HAS_ASSEMBLY*1..4]->(part:Component)
+			RETURN nodes(p) AS pathNodes, length(p) AS hops
+		`
+		compiled, err := cyphersql.CompileWithSchema(cypher, cfg)
+		if err != nil {
+			t.Fatalf("compile failed: %v", err)
+		}
+		if !strings.Contains(compiled.SQL, "position(v.trail,") {
+			t.Errorf("expected ClickHouse position() cycle check, got:\n%s", compiled.SQL)
+		}
+		if strings.Contains(compiled.SQL, "instr(") {
+			t.Errorf("ClickHouse SQL must not contain SQLite instr():\n%s", compiled.SQL)
+		}
+		if !strings.Contains(compiled.SQL, "[_r1.start_id, _r1.end_id]") {
+			t.Errorf("expected ClickHouse array literal for nodes(p), got:\n%s", compiled.SQL)
+		}
+	})
+
+	t.Run("EntityObjects_Keys_Reduce_ListComp", func(t *testing.T) {
+		cypher := `
+			MATCH (n:Component {id: 'c:1'})-[r:CONNECTS]->(m:Component)
+			RETURN n, r, keys(n) AS propKeys,
+			       [x IN n.tags WHERE x <> 'legacy' | x] AS activeTags,
+			       reduce(total = 0, x IN n.costs | total + x) AS sumCosts
+		`
+		compiled, err := cyphersql.CompileWithSchema(cypher, cfg)
+		if err != nil {
+			t.Fatalf("compile failed: %v", err)
+		}
+		expected := []string{
+			"map('id', toString(n.id), 'kind', toString(n.kind), 'properties', toString(n.properties))",
+			"JSONExtractKeys(n.properties)",
+			"(SELECT groupArray(x) FROM (SELECT arrayJoin(JSONExtract(JSONExtractString(n.properties, 'tags'), 'Array(String)')) AS x) WHERE (x != 'legacy'))",
+			"arraySum(JSONExtract(JSONExtractString(n.properties, 'costs'), 'Array(Float64)'))",
+		}
+		for _, snip := range expected {
+			if !strings.Contains(compiled.SQL, snip) {
+				t.Errorf("expected ClickHouse SQL to contain %q, got:\n%s", snip, compiled.SQL)
+			}
+		}
+		if strings.Contains(compiled.SQL, "json_object") || strings.Contains(compiled.SQL, "json_each") || strings.Contains(compiled.SQL, "json_group_array") {
+			t.Errorf("ClickHouse SQL leaked SQLite json functions:\n%s", compiled.SQL)
+		}
+	})
+}
+

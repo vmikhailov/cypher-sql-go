@@ -24,36 +24,43 @@ type SchemaConfig struct {
 	EdgePropsCol string
 	// LabelResolver provides an optional hook to override SQL predicates for node labels.
 	LabelResolver func(nodeVar, label string) (string, bool)
+	// MaxPathTraversals caps the maximum number of recursive CTE rows for variable-length paths (default: 50000; <0 disables).
+	MaxPathTraversals int
 }
+
+// DefaultMaxPathTraversals is the default safeguard cap on variable-length path expansion.
+const DefaultMaxPathTraversals = 50000
 
 // DefaultSchemaConfig returns the standard Universal Property Graph schema configuration for SQLite.
 func DefaultSchemaConfig() SchemaConfig {
 	return SchemaConfig{
-		Dialect:      SQLiteDialect(),
-		NodesTable:   "nodes",
-		EdgesTable:   "edges",
-		NodeIDCol:    "id",
-		NodeKindCol:  "kind",
-		NodePropsCol: "properties",
-		EdgeFromCol:  "from_id",
-		EdgeToCol:    "to_id",
-		EdgeKindCol:  "kind",
-		EdgePropsCol: "properties",
+		Dialect:           SQLiteDialect(),
+		NodesTable:        "nodes",
+		EdgesTable:        "edges",
+		NodeIDCol:         "id",
+		NodeKindCol:       "kind",
+		NodePropsCol:      "properties",
+		EdgeFromCol:       "from_id",
+		EdgeToCol:         "to_id",
+		EdgeKindCol:       "kind",
+		EdgePropsCol:      "properties",
+		MaxPathTraversals: DefaultMaxPathTraversals,
 	}
 }
 
 // ClickHouseSchemaConfig returns a standard SchemaConfig tuned for ClickHouse.
 func ClickHouseSchemaConfig() SchemaConfig {
 	return SchemaConfig{
-		Dialect:      ClickHouseDialect(),
-		NodesTable:   "nodes",
-		EdgesTable:   "edges",
-		NodeIDCol:    "id",
-		NodeKindCol:  "kind",
-		NodePropsCol: "properties",
-		EdgeFromCol:  "from_id",
-		EdgeToCol:    "to_id",
-		EdgeKindCol:  "kind",
-		EdgePropsCol: "properties",
+		Dialect:           ClickHouseDialect(),
+		NodesTable:        "nodes",
+		EdgesTable:        "edges",
+		NodeIDCol:         "id",
+		NodeKindCol:       "kind",
+		NodePropsCol:      "properties",
+		EdgeFromCol:       "from_id",
+		EdgeToCol:         "to_id",
+		EdgeKindCol:       "kind",
+		EdgePropsCol:      "properties",
+		MaxPathTraversals: DefaultMaxPathTraversals,
 	}
 }

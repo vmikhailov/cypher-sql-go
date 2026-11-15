@@ -54,11 +54,14 @@ type ProjectionItem struct {
 	Alias      string
 }
 
-// WithClause represents WITH [DISTINCT] item1, item2 [WHERE ...].
+// WithClause represents WITH [DISTINCT] item1, item2 [WHERE ...] [ORDER BY ...] [SKIP ...] [LIMIT ...].
 type WithClause struct {
 	IsDistinct bool
 	Items      []ProjectionItem
 	Where      Expression
+	OrderBy    []OrderByItem
+	Skip       Expression
+	Limit      Expression
 }
 
 // UnwindClause represents UNWIND expr AS alias.
@@ -317,3 +320,30 @@ type ReduceExpr struct {
 }
 
 func (ReduceExpr) exprNode() {}
+
+// ListSliceExpr represents list[from..to].
+type ListSliceExpr struct {
+	List Expression
+	From Expression
+	To   Expression
+}
+
+func (ListSliceExpr) exprNode() {}
+
+// ExistsSubqueryExpr represents EXISTS { ... }.
+type ExistsSubqueryExpr struct {
+	Matches   []MatchClause
+	Where     Expression
+	FullQuery *Query
+}
+
+func (ExistsSubqueryExpr) exprNode() {}
+
+// CountSubqueryExpr represents COUNT { ... }.
+type CountSubqueryExpr struct {
+	Matches   []MatchClause
+	Where     Expression
+	FullQuery *Query
+}
+
+func (CountSubqueryExpr) exprNode() {}

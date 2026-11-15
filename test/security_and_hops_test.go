@@ -41,12 +41,12 @@ func TestVariableLengthRelationships_UnsupportedCases(t *testing.T) {
 		}
 	}
 
-	// ClickHouse dialect unsupported
+	// Unanchored ClickHouse variable-length query is rejected just like SQLite
 	_, err := cyphersql.CompileWithSchema("MATCH (a:Person)-[*1..3]->(b:Person) RETURN a, b", cyphersql.ClickHouseSchemaConfig())
 	if err == nil {
-		t.Fatalf("expected ClickHouse variable-length query to return error, but got nil")
+		t.Fatalf("expected unanchored ClickHouse variable-length query to return error, but got nil")
 	}
-	if !strings.Contains(err.Error(), "ClickHouse") {
-		t.Fatalf("expected error mentioning ClickHouse, got: %v", err)
+	if !strings.Contains(err.Error(), "anchored") {
+		t.Fatalf("expected error mentioning anchored start/target node, got: %v", err)
 	}
 }

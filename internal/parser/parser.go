@@ -161,29 +161,11 @@ func (p *Parser) parseSingleQuery() (*ast.Query, error) {
 
 	// 4. ORDER BY
 	if p.current.Type == TokenOrder {
-		p.nextToken() // skip ORDER
-		if err := p.expect(TokenBy); err != nil {
+		ob, err := p.parseOrderByItems()
+		if err != nil {
 			return nil, err
 		}
-		for {
-			item, err := p.parseExpression()
-			if err != nil {
-				return nil, err
-			}
-			isDesc := false
-			if p.current.Type == TokenDesc {
-				isDesc = true
-				p.nextToken()
-			} else if p.current.Type == TokenAsc {
-				p.nextToken()
-			}
-			q.OrderBy = append(q.OrderBy, ast.OrderByItem{Expression: item, IsDesc: isDesc})
-			if p.current.Type == TokenComma {
-				p.nextToken()
-			} else {
-				break
-			}
-		}
+		q.OrderBy = ob
 	}
 
 	// 5. SKIP & LIMIT in any order
@@ -206,6 +188,34 @@ func (p *Parser) parseSingleQuery() (*ast.Query, error) {
 	}
 
 	return q, nil
+}
+
+func (p *Parser) parseOrderByItems() ([]ast.OrderByItem, error) {
+	p.nextToken() // skip ORDER
+	if err := p.expect(TokenBy); err != nil {
+		return nil, err
+	}
+	var items []ast.OrderByItem
+	for {
+		item, err := p.parseExpression()
+		if err != nil {
+			return nil, err
+		}
+		isDesc := false
+		if p.current.Type == TokenDesc {
+			isDesc = true
+			p.nextToken()
+		} else if p.current.Type == TokenAsc {
+			p.nextToken()
+		}
+		items = append(items, ast.OrderByItem{Expression: item, IsDesc: isDesc})
+		if p.current.Type == TokenComma {
+			p.nextToken()
+		} else {
+			break
+		}
+	}
+	return items, nil
 }
 
 func (p *Parser) parseUnwind() (*ast.UnwindClause, error) {
@@ -307,20 +317,66 @@ func (p *Parser) parseWith() (*ast.WithClause, error) {
 		}
 	}
 
-	var whereExpr ast.Expression
+	var whereBefore ast.Expression
 	if p.current.Type == TokenWhere {
 		p.nextToken()
 		w, err := p.parseExpression()
 		if err != nil {
 			return nil, err
 		}
-		whereExpr = w
+		whereBefore = w
+	}
+
+	var orderBy []ast.OrderByItem
+	if p.current.Type == TokenOrder {
+		ob, err := p.parseOrderByItems()
+		if err != nil {
+			return nil, err
+		}
+		orderBy = ob
+	}
+
+	var skipExpr, limitExpr ast.Expression
+	for p.current.Type == TokenSkip || p.current.Type == TokenLimit {
+		if p.current.Type == TokenSkip {
+			p.nextToken()
+			s, err := p.parseExpression()
+			if err != nil {
+				return nil, err
+			}
+			skipExpr = s
+		} else if p.current.Type == TokenLimit {
+			p.nextToken()
+			l, err := p.parseExpression()
+			if err != nil {
+				return nil, err
+			}
+			limitExpr = l
+		}
+	}
+
+	var whereAfter ast.Expression
+	if p.current.Type == TokenWhere {
+		p.nextToken()
+		w, err := p.parseExpression()
+		if err != nil {
+			return nil, err
+		}
+		whereAfter = w
+	}
+
+	whereExpr := whereBefore
+	if whereAfter != nil {
+		whereExpr = whereAfter
 	}
 
 	return &ast.WithClause{
 		IsDistinct: isDistinct,
 		Items:      items,
 		Where:      whereExpr,
+		OrderBy:    orderBy,
+		Skip:       skipExpr,
+		Limit:      limitExpr,
 	}, nil
 }
 
@@ -878,7 +934,48 @@ func (p *Parser) parsePostfix() (ast.Expression, error) {
 			} else if pa, ok := expr.(ast.PropertyAccessExpr); ok {
 				expr = ast.PropertyAccessExpr{Variable: pa.Variable + "." + pa.Property, Property: prop}
 			} else {
-				expr = ast.PropertyAccessExpr{Variable: fmt.Sprintf("%v", expr), Property: prop}
+				expr = ast.FunctionCallExpr{
+					Name: "item_at",
+					Args: []ast.Expression{
+						expr,
+						ast.LiteralExpr{Kind: ast.LiteralString, StrVal: prop, Raw: prop},
+					},
+				}
+			}
+		} else if p.current.Type == TokenLBracket {
+			// Index or slice access: expr[0], expr[1..3], expr[..2], expr[1..]
+			p.nextToken() // skip '['
+			var fromExpr ast.Expression
+			isSlice := false
+			if !(p.current.Type == TokenIdent && p.current.Value == "..") {
+				f, err := p.parseExpression()
+				if err != nil {
+					return nil, err
+				}
+				fromExpr = f
+			}
+			var toExpr ast.Expression
+			if p.current.Type == TokenIdent && p.current.Value == ".." {
+				isSlice = true
+				p.nextToken() // skip '..'
+				if p.current.Type != TokenRBracket {
+					t, err := p.parseExpression()
+					if err != nil {
+						return nil, err
+					}
+					toExpr = t
+				}
+			}
+			if err := p.expect(TokenRBracket); err != nil {
+				return nil, err
+			}
+			if isSlice {
+				expr = ast.ListSliceExpr{List: expr, From: fromExpr, To: toExpr}
+			} else {
+				expr = ast.FunctionCallExpr{
+					Name: "item_at",
+					Args: []ast.Expression{expr, fromExpr},
+				}
 			}
 		} else if p.current.Type == TokenColon {
 			// Label check: e.g. p:Service or ep:Endpoint:Active
@@ -1014,6 +1111,9 @@ func (p *Parser) parsePrimary() (ast.Expression, error) {
 		return p.parseCase()
 
 	case TokenExists:
+		if p.peek.Type == TokenLBrace {
+			return p.parseSubqueryExpression(true)
+		}
 		p.nextToken()
 		if err := p.expect(TokenLParen); err != nil {
 			return nil, err
@@ -1030,6 +1130,10 @@ func (p *Parser) parsePrimary() (ast.Expression, error) {
 	case TokenIdent, TokenReduce:
 		ident := p.current.Value
 		lower := strings.ToLower(ident)
+
+		if lower == "count" && p.peek.Type == TokenLBrace {
+			return p.parseSubqueryExpression(false)
+		}
 
 		// Check for quantifier predicates: any(x IN list WHERE pred), all(), none(), single()
 		if (lower == "any" || lower == "all" || lower == "none" || lower == "single") && p.peek.Type == TokenLParen {
@@ -1359,4 +1463,97 @@ func (p *Parser) parseCase() (ast.Expression, error) {
 		WhenBranches: whenBranches,
 		Else:         elseExpr,
 	}, nil
+}
+
+func (p *Parser) parseSubqueryExpression(isExists bool) (ast.Expression, error) {
+	p.nextToken() // skip EXISTS or COUNT
+	if err := p.expect(TokenLBrace); err != nil {
+		return nil, err
+	}
+
+	var matches []ast.MatchClause
+	var whereExpr ast.Expression
+	var fullQuery *ast.Query
+
+	if p.current.Type == TokenMatch || p.current.Type == TokenOptional || p.current.Type == TokenWith || p.current.Type == TokenUnwind || p.current.Type == TokenCall {
+		savedLexerPos := p.lexer.pos
+		savedLexerRead := p.lexer.read
+		savedLexerCh := p.lexer.ch
+		savedLexerLine := p.lexer.line
+		savedLexerCol := p.lexer.column
+		savedCurrent := p.current
+		savedPeek := p.peek
+
+		q, err := p.parseSingleQuery()
+		if err == nil && p.current.Type == TokenRBrace {
+			p.nextToken() // skip '}'
+			fullQuery = q
+			matches = q.Matches
+			whereExpr = q.Where
+			if isExists {
+				return ast.ExistsSubqueryExpr{Matches: matches, Where: whereExpr, FullQuery: fullQuery}, nil
+			}
+			return ast.CountSubqueryExpr{Matches: matches, Where: whereExpr, FullQuery: fullQuery}, nil
+		}
+
+		// Rollback and parse MATCH ... [WHERE ...] without RETURN
+		p.lexer.pos = savedLexerPos
+		p.lexer.read = savedLexerRead
+		p.lexer.ch = savedLexerCh
+		p.lexer.line = savedLexerLine
+		p.lexer.column = savedLexerCol
+		p.current = savedCurrent
+		p.peek = savedPeek
+
+		for p.current.Type == TokenMatch || p.current.Type == TokenOptional {
+			m, err := p.parseMatch()
+			if err != nil {
+				return nil, err
+			}
+			matches = append(matches, *m)
+		}
+		if p.current.Type == TokenWhere {
+			p.nextToken()
+			w, err := p.parseExpression()
+			if err != nil {
+				return nil, err
+			}
+			whereExpr = w
+		}
+		if err := p.expect(TokenRBrace); err != nil {
+			return nil, err
+		}
+	} else {
+		// Shorthand pattern list: EXISTS { (a)-[:REL]->(b) WHERE ... }
+		var paths []ast.PathPattern
+		for {
+			path, err := p.parsePathPattern()
+			if err != nil {
+				return nil, err
+			}
+			paths = append(paths, *path)
+			if p.current.Type == TokenComma {
+				p.nextToken()
+			} else {
+				break
+			}
+		}
+		if p.current.Type == TokenWhere {
+			p.nextToken()
+			w, err := p.parseExpression()
+			if err != nil {
+				return nil, err
+			}
+			whereExpr = w
+		}
+		if err := p.expect(TokenRBrace); err != nil {
+			return nil, err
+		}
+		matches = []ast.MatchClause{{IsOptional: false, Paths: paths}}
+	}
+
+	if isExists {
+		return ast.ExistsSubqueryExpr{Matches: matches, Where: whereExpr}, nil
+	}
+	return ast.CountSubqueryExpr{Matches: matches, Where: whereExpr}, nil
 }

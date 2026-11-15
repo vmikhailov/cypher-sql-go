@@ -129,7 +129,7 @@ func (c *Compiler) compileGraphFunction(lower string, fn ast.FunctionCallExpr) (
 		}
 		if id, ok := fn.Args[0].(ast.IdentifierExpr); ok {
 			if c.declaredNodes[id.Name] {
-				return c.renderEntityProperties(c.escapeVar(id.Name) + "." + c.schema.NodePropsCol), true, nil
+				return c.renderEntityProperties(c.getNodePropsSQL(id.Name)), true, nil
 			}
 			if c.declaredRels[id.Name] {
 				return c.renderEntityProperties(c.escapeVar(id.Name) + "." + c.schema.EdgePropsCol), true, nil
@@ -149,6 +149,9 @@ func (c *Compiler) compileGraphFunction(lower string, fn ast.FunctionCallExpr) (
 			return "", true, fmt.Errorf("labels() takes exactly 1 argument, got %d", len(fn.Args))
 		}
 		if id, ok := fn.Args[0].(ast.IdentifierExpr); ok {
+			if c.declaredNodes[id.Name] {
+				return c.schema.Dialect.ArrayLiteral(c.getNodeKindSQL(id.Name)), true, nil
+			}
 			v := c.escapeVar(id.Name)
 			return c.schema.Dialect.ArrayLiteral(v + "." + c.schema.NodeKindCol), true, nil
 		}
@@ -175,15 +178,25 @@ func (c *Compiler) compileGraphFunction(lower string, fn ast.FunctionCallExpr) (
 		if id, ok := fn.Args[0].(ast.IdentifierExpr); ok {
 			v := c.escapeVar(id.Name)
 			if c.declaredNodes[id.Name] {
-				return "(SELECT json_group_array(key) FROM json_each(" + v + "." + c.schema.NodePropsCol + "))", true, nil
+				propsSQL := c.getNodePropsSQL(id.Name)
+				if c.schema.Dialect.Name() == "clickhouse" {
+					return "JSONExtractKeys(" + propsSQL + ")", true, nil
+				}
+				return "(SELECT json_group_array(key) FROM json_each(" + propsSQL + "))", true, nil
 			}
 			if c.declaredRels[id.Name] {
+				if c.schema.Dialect.Name() == "clickhouse" {
+					return "JSONExtractKeys(" + v + "." + c.schema.EdgePropsCol + ")", true, nil
+				}
 				return "(SELECT json_group_array(key) FROM json_each(" + v + "." + c.schema.EdgePropsCol + "))", true, nil
 			}
 		}
 		argSQL, err := c.visitExpression(fn.Args[0])
 		if err != nil {
 			return "", true, err
+		}
+		if c.schema.Dialect.Name() == "clickhouse" {
+			return "JSONExtractKeys(" + argSQL + ")", true, nil
 		}
 		return "(SELECT json_group_array(key) FROM json_each(" + argSQL + "))", true, nil
 
@@ -193,7 +206,7 @@ func (c *Compiler) compileGraphFunction(lower string, fn ast.FunctionCallExpr) (
 		}
 		if id, ok := fn.Args[0].(ast.IdentifierExpr); ok {
 			v := c.escapeVar(id.Name)
-			return "json_array(" + v + ".start_id, " + v + ".end_id)", true, nil
+			return c.schema.Dialect.ArrayLiteral(v+".start_id", v+".end_id"), true, nil
 		}
 		argSQL, err := c.visitExpression(fn.Args[0])
 		if err != nil {
@@ -218,9 +231,15 @@ func (c *Compiler) compileAggregateFunction(lower string, fn ast.FunctionCallExp
 		}
 		if id, ok := fn.Args[0].(ast.IdentifierExpr); ok {
 			if c.declaredNodes[id.Name] {
-				return "COUNT(" + distinctStr + c.escapeVar(id.Name) + "." + c.schema.NodeIDCol + ")", true, nil
+				return "COUNT(" + distinctStr + c.getNodeIDSQL(id.Name) + ")", true, nil
 			}
 			if c.declaredRels[id.Name] {
+				if c.varLenRels[id.Name] {
+					return "COUNT(" + distinctStr + c.escapeVar(id.Name) + ".depth)", true, nil
+				}
+				if c.schema.Dialect.Name() == "clickhouse" {
+					return "COUNT(" + distinctStr + c.escapeVar(id.Name) + "." + c.schema.EdgeFromCol + ")", true, nil
+				}
 				return "COUNT(" + distinctStr + c.escapeVar(id.Name) + ".rowid)", true, nil
 			}
 		}
@@ -239,6 +258,17 @@ func (c *Compiler) compileAggregateFunction(lower string, fn ast.FunctionCallExp
 			return "", true, err
 		}
 		return c.schema.Dialect.ArrayAgg(innerSQL, innerSQL+" IS NOT NULL", fn.IsDistinct), true, nil
+
+	case "sum", "avg", "min", "max":
+		if len(fn.Args) != 1 {
+			return "", true, fmt.Errorf("%s() takes exactly 1 argument, got %d", fn.Name, len(fn.Args))
+		}
+		numeric := lower == "sum" || lower == "avg"
+		argSQL, err := c.visitExpressionContextual(fn.Args[0], numeric)
+		if err != nil {
+			return "", true, err
+		}
+		return fn.Name + "(" + distinctStr + argSQL + ")", true, nil
 
 	default:
 		return "", false, nil
@@ -287,7 +317,36 @@ func (c *Compiler) compileScalarFunction(lower string, fn ast.FunctionCallExpr) 
 		if err != nil {
 			return "", true, err
 		}
+		if c.schema.Dialect.Name() == "clickhouse" {
+			return "toString(" + argSQL + ")", true, nil
+		}
 		return "CAST(" + argSQL + " AS TEXT)", true, nil
+
+	case "tointeger", "toint":
+		if len(fn.Args) != 1 {
+			return "", true, fmt.Errorf("%s() takes exactly 1 argument, got %d", fn.Name, len(fn.Args))
+		}
+		argSQL, err := c.visitExpressionContextual(fn.Args[0], true)
+		if err != nil {
+			return "", true, err
+		}
+		if c.schema.Dialect.Name() == "clickhouse" {
+			return "toInt64OrZero(" + argSQL + ")", true, nil
+		}
+		return "CAST(" + argSQL + " AS INTEGER)", true, nil
+
+	case "tofloat":
+		if len(fn.Args) != 1 {
+			return "", true, fmt.Errorf("toFloat() takes exactly 1 argument, got %d", len(fn.Args))
+		}
+		argSQL, err := c.visitExpressionContextual(fn.Args[0], true)
+		if err != nil {
+			return "", true, err
+		}
+		if c.schema.Dialect.Name() == "clickhouse" {
+			return "toFloat64OrZero(" + argSQL + ")", true, nil
+		}
+		return "CAST(" + argSQL + " AS REAL)", true, nil
 
 	case "length":
 		if len(fn.Args) != 1 {
@@ -295,7 +354,7 @@ func (c *Compiler) compileScalarFunction(lower string, fn ast.FunctionCallExpr) 
 		}
 		if id, ok := fn.Args[0].(ast.IdentifierExpr); ok {
 			v := c.escapeVar(id.Name)
-			if c.declaredRels[id.Name] || (c.varAliases != nil && c.varAliases[id.Name] != "") {
+			if c.varLenRels[id.Name] || c.varLenRels[v] || c.declaredRels[id.Name] || (c.varAliases != nil && c.varAliases[id.Name] != "") {
 				return v + ".depth", true, nil
 			}
 		}
@@ -309,11 +368,121 @@ func (c *Compiler) compileScalarFunction(lower string, fn ast.FunctionCallExpr) 
 		if len(fn.Args) != 1 {
 			return "", true, fmt.Errorf("size() takes exactly 1 argument, got %d", len(fn.Args))
 		}
+		if id, ok := fn.Args[0].(ast.IdentifierExpr); ok {
+			v := c.escapeVar(id.Name)
+			if c.varLenRels[id.Name] || c.varLenRels[v] {
+				return v + ".depth", true, nil
+			}
+		}
 		argSQL, err := c.visitExpression(fn.Args[0])
 		if err != nil {
 			return "", true, err
 		}
 		return c.schema.Dialect.ArrayLength(argSQL), true, nil
+
+	case "item_at":
+		if len(fn.Args) != 2 {
+			return "", true, fmt.Errorf("item_at() takes exactly 2 arguments, got %d", len(fn.Args))
+		}
+		if propLit, ok := fn.Args[1].(ast.LiteralExpr); ok && propLit.Kind == ast.LiteralString {
+			propName := propLit.StrVal
+			if innerFn, ok := fn.Args[0].(ast.FunctionCallExpr); ok && len(innerFn.Args) == 1 {
+				innerLower := strings.ToLower(innerFn.Name)
+				if innerLower == "startnode" || innerLower == "start_node" || innerLower == "endnode" || innerLower == "end_node" {
+					if relId, ok := innerFn.Args[0].(ast.IdentifierExpr); ok && c.declaredRels[relId.Name] {
+						colName := c.schema.EdgeFromCol
+						if innerLower == "endnode" || innerLower == "end_node" {
+							colName = c.schema.EdgeToCol
+						}
+						nodeIDExpr := c.escapeVar(relId.Name) + "." + colName
+						switch strings.ToLower(propName) {
+						case "id", strings.ToLower(c.schema.NodeIDCol):
+							return nodeIDExpr, true, nil
+						case "kind", "label", strings.ToLower(c.schema.NodeKindCol):
+							return fmt.Sprintf("(SELECT _sn.%s FROM %s _sn WHERE _sn.%s = %s)",
+								c.schema.NodeKindCol, c.schema.NodesTable, c.schema.NodeIDCol, nodeIDExpr), true, nil
+						case "properties", strings.ToLower(c.schema.NodePropsCol):
+							return fmt.Sprintf("(SELECT _sn.%s FROM %s _sn WHERE _sn.%s = %s)",
+								c.schema.NodePropsCol, c.schema.NodesTable, c.schema.NodeIDCol, nodeIDExpr), true, nil
+						default:
+							return fmt.Sprintf("(SELECT %s FROM %s _sn WHERE _sn.%s = %s)",
+								c.schema.Dialect.JSONExtract("_sn."+c.schema.NodePropsCol, propName),
+								c.schema.NodesTable, c.schema.NodeIDCol, nodeIDExpr), true, nil
+						}
+					}
+				}
+			}
+			if varId, ok := fn.Args[0].(ast.IdentifierExpr); ok && (c.declaredNodes[varId.Name] || c.declaredRels[varId.Name]) {
+				return c.visitPropertyAccess(ast.PropertyAccessExpr{
+					Variable: varId.Name,
+					Property: propName,
+				}), true, nil
+			}
+			containerSQL, err := c.visitExpression(fn.Args[0])
+			if err != nil {
+				return "", true, err
+			}
+			return c.schema.Dialect.JSONExtract(containerSQL, propName), true, nil
+		}
+
+		containerSQL, err := c.visitExpression(fn.Args[0])
+		if err != nil {
+			return "", true, err
+		}
+		if c.schema.Dialect.Name() == "clickhouse" {
+			idxSQL, err := c.visitExpression(fn.Args[1])
+			if err != nil {
+				return "", true, err
+			}
+			return fmt.Sprintf("arrayElement(%s, (%s) + 1)", containerSQL, idxSQL), true, nil
+		}
+		if idxInt, ok := tryGetIntLiteral(fn.Args[1]); ok {
+			if idxInt < 0 {
+				return fmt.Sprintf("json_extract(%s, '$[#%d]')", containerSQL, idxInt), true, nil
+			}
+			return fmt.Sprintf("json_extract(%s, '$[%d]')", containerSQL, idxInt), true, nil
+		}
+		idxSQL, err := c.visitExpression(fn.Args[1])
+		if err != nil {
+			return "", true, err
+		}
+		return fmt.Sprintf("json_extract(%s, '$[' || (%s) || ']')", containerSQL, idxSQL), true, nil
+
+	case "head":
+		if len(fn.Args) != 1 {
+			return "", true, fmt.Errorf("head() takes exactly 1 argument, got %d", len(fn.Args))
+		}
+		listSQL, err := c.visitExpression(fn.Args[0])
+		if err != nil {
+			return "", true, err
+		}
+		if c.schema.Dialect.Name() == "clickhouse" {
+			return "arrayElement(" + listSQL + ", 1)", true, nil
+		}
+		return "json_extract(" + listSQL + ", '$[0]')", true, nil
+
+	case "last":
+		if len(fn.Args) != 1 {
+			return "", true, fmt.Errorf("last() takes exactly 1 argument, got %d", len(fn.Args))
+		}
+		listSQL, err := c.visitExpression(fn.Args[0])
+		if err != nil {
+			return "", true, err
+		}
+		if c.schema.Dialect.Name() == "clickhouse" {
+			return "arrayElement(" + listSQL + ", -1)", true, nil
+		}
+		return "json_extract(" + listSQL + ", '$[#-1]')", true, nil
+
+	case "tail":
+		if len(fn.Args) != 1 {
+			return "", true, fmt.Errorf("tail() takes exactly 1 argument, got %d", len(fn.Args))
+		}
+		sql, err := c.visitListSlice(ast.ListSliceExpr{
+			List: fn.Args[0],
+			From: ast.LiteralExpr{Kind: ast.LiteralNumber, NumVal: 1, IsInteger: true},
+		})
+		return sql, true, err
 
 	default:
 		return "", false, nil

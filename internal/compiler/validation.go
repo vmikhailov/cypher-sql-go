@@ -134,6 +134,21 @@ func (c *Compiler) validateWith(w ast.WithClause) error {
 			return err
 		}
 	}
+	for _, ob := range w.OrderBy {
+		if err := c.validateExpr(ob.Expression); err != nil {
+			return err
+		}
+	}
+	if w.Skip != nil {
+		if err := c.validateExpr(w.Skip); err != nil {
+			return err
+		}
+	}
+	if w.Limit != nil {
+		if err := c.validateExpr(w.Limit); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -176,15 +191,6 @@ func (c *Compiler) validateNodePattern(node ast.NodePattern) error {
 
 func (c *Compiler) validateRelPattern(rel ast.RelationshipPattern) error {
 	if rel.MinHops != nil || rel.MaxHops != nil {
-		if c.schema.Dialect.Name() == "clickhouse" {
-			return fmt.Errorf("variable-length relationships are not supported for ClickHouse dialect")
-		}
-		if rel.Variable != "" {
-			return fmt.Errorf("binding relationship variable %q in variable-length relationships is not yet supported", rel.Variable)
-		}
-		if rel.Direction == ast.DirectionUndirected {
-			return fmt.Errorf("undirected variable-length relationships are not yet supported")
-		}
 		if rel.MinHops != nil && *rel.MinHops < 1 {
 			return fmt.Errorf("0-hop variable-length relationships (*0..) are not yet supported")
 		}
@@ -342,6 +348,34 @@ func (c *Compiler) validateExpr(expr ast.Expression) error {
 			return err
 		}
 		return c.validateExpr(e.Expression)
+	case ast.ListSliceExpr:
+		if err := c.validateExpr(e.List); err != nil {
+			return err
+		}
+		if err := c.validateExpr(e.From); err != nil {
+			return err
+		}
+		return c.validateExpr(e.To)
+	case ast.ExistsSubqueryExpr:
+		if e.FullQuery != nil {
+			return c.validateQuery(e.FullQuery)
+		}
+		for _, m := range e.Matches {
+			if err := c.validateMatch(m); err != nil {
+				return err
+			}
+		}
+		return c.validateExpr(e.Where)
+	case ast.CountSubqueryExpr:
+		if e.FullQuery != nil {
+			return c.validateQuery(e.FullQuery)
+		}
+		for _, m := range e.Matches {
+			if err := c.validateMatch(m); err != nil {
+				return err
+			}
+		}
+		return c.validateExpr(e.Where)
 	case ast.LiteralExpr, ast.WildcardExpr:
 		return nil
 	default:

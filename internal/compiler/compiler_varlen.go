@@ -16,7 +16,9 @@ func (c *Compiler) processVarLenStep(
 	targetNode ast.NodePattern,
 	targetVar string,
 	relVar string,
+	prevDeclared bool,
 	targetAlreadyDeclared bool,
+	isOptional bool,
 	joinKeyword string,
 	optionalWhereExtra []string,
 	isShortestPath bool,
@@ -34,6 +36,10 @@ func (c *Compiler) processVarLenStep(
 	escRel := c.escapeVar(relVar)
 	escTarget := c.escapeVar(targetVar)
 	escPrev := c.escapeVar(prevVar)
+
+	c.declaredRels[relVar] = true
+	c.varLenRels[relVar] = true
+	c.varLenRels[escRel] = true
 
 	// Collect edge filters (types + properties)
 	var edgeFilterConds []string
@@ -59,8 +65,12 @@ func (c *Compiler) processVarLenStep(
 				case strings.ToLower(c.schema.EdgeToCol), "to", "to_id":
 					edgeFilterConds = append(edgeFilterConds, "e."+c.schema.EdgeToCol+" = "+valSQL)
 				default:
+					extractFn := c.schema.Dialect.JSONExtract
+					if c.isNumericExpr(v) {
+						extractFn = c.schema.Dialect.JSONExtractNumber
+					}
 					edgeFilterConds = append(edgeFilterConds,
-						c.schema.Dialect.JSONExtract("e."+c.schema.EdgePropsCol, k)+" = "+valSQL)
+						extractFn("e."+c.schema.EdgePropsCol, k)+" = "+valSQL)
 				}
 			}
 		}
@@ -71,25 +81,49 @@ func (c *Compiler) processVarLenStep(
 		edgeFilterSQL = strings.Join(edgeFilterConds, " AND ")
 	}
 
-	// Collect filters on endpoints for anchor selection
-	prevFilters := append(c.collectNodePatternFilters(prevNode, "seed_n"), c.collectWhereConjunctsForVar(prevVar, "seed_n")...)
-	targetFilters := append(c.collectNodePatternFilters(targetNode, "seed_n"), c.collectWhereConjunctsForVar(targetVar, "seed_n")...)
+	// Collect filters on endpoints (including 1-hop anchored neighbors) for anchor selection
+	prevNeighborConds := c.collectNeighborAnchorFilters(prevVar, "seed_n")
+	targetNeighborConds := c.collectNeighborAnchorFilters(targetVar, "seed_n")
 
-	prevHasProp := c.nodeHasPropertyAnchor(prevNode, prevVar)
-	targetHasProp := c.nodeHasPropertyAnchor(targetNode, targetVar)
+	prevFilters := append(c.collectNodePatternFilters(prevNode, "seed_n"), c.collectWhereConjunctsForVar(prevVar, "seed_n")...)
+	prevFilters = append(prevFilters, prevNeighborConds...)
+
+	targetFilters := append(c.collectNodePatternFilters(targetNode, "seed_n"), c.collectWhereConjunctsForVar(targetVar, "seed_n")...)
+	targetFilters = append(targetFilters, targetNeighborConds...)
+
+	prevScore := c.scoreAnchorSelectivity(prevNode, prevVar, len(prevNeighborConds) > 0)
+	targetScore := c.scoreAnchorSelectivity(targetNode, targetVar, len(targetNeighborConds) > 0)
 
 	var anchorEnd string
-	if prevHasProp && !targetHasProp {
-		anchorEnd = "prev"
-	} else if targetHasProp && !prevHasProp {
-		anchorEnd = "target"
-	} else if prevHasProp && targetHasProp {
+	if prevScore == 0 && targetScore == 0 {
+		return fmt.Errorf("variable-length traversal requires an anchored start or target node with property filters (e.g. {id: ...} or WHERE x.name = ...) to prevent full-graph traversal; node label alone (e.g. :Person) is not selective enough")
+	}
+	if prevScore >= targetScore {
 		anchorEnd = "prev"
 	} else {
-		return fmt.Errorf("variable-length traversal requires an anchored start or target node with property filters (e.g. {id: ...} or WHERE x.name = ...) to prevent full-graph traversal; node label alone (e.g. :Person) is not selective enough")
+		anchorEnd = "target"
+	}
+
+	isUndirected := rel.Direction == ast.DirectionUndirected
+	edgesSource := c.schema.EdgesTable
+	if isUndirected {
+		edgesSource = fmt.Sprintf("(SELECT %s, %s, %s, %s FROM %s UNION ALL SELECT %s AS %s, %s AS %s, %s, %s FROM %s)",
+			c.schema.EdgeFromCol, c.schema.EdgeToCol, c.schema.EdgeKindCol, c.schema.EdgePropsCol, c.schema.EdgesTable,
+			c.schema.EdgeToCol, c.schema.EdgeFromCol, c.schema.EdgeFromCol, c.schema.EdgeToCol, c.schema.EdgeKindCol, c.schema.EdgePropsCol, c.schema.EdgesTable)
 	}
 
 	edgeKey := "char(31) || e." + c.schema.EdgeFromCol + " || char(30) || e." + c.schema.EdgeToCol + " || char(30) || e." + c.schema.EdgeKindCol + " || char(31)"
+	if isUndirected {
+		edgeKey = fmt.Sprintf("char(31) || (CASE WHEN e.%s < e.%s THEN e.%s || char(30) || e.%s ELSE e.%s || char(30) || e.%s END) || char(30) || e.%s || char(31)",
+			c.schema.EdgeFromCol, c.schema.EdgeToCol,
+			c.schema.EdgeFromCol, c.schema.EdgeToCol,
+			c.schema.EdgeToCol, c.schema.EdgeFromCol,
+			c.schema.EdgeKindCol)
+	}
+	noCycleCheck := "instr(v.trail, " + edgeKey + ") = 0"
+	if c.schema.Dialect.Name() == "clickhouse" {
+		noCycleCheck = "position(v.trail, " + edgeKey + ") = 0"
+	}
 
 	cteName := fmt.Sprintf("_vl%d", len(c.ctes)+1)
 
@@ -97,7 +131,7 @@ func (c *Compiler) processVarLenStep(
 	var seedSQL string
 	var recursiveSQL string
 
-	if rel.Direction == ast.DirectionOutgoing {
+	if rel.Direction == ast.DirectionOutgoing || isUndirected {
 		switch anchorEnd {
 		case "prev":
 			seedWhere = append(seedWhere, "e."+c.schema.EdgeFromCol+" IN (SELECT "+c.schema.NodeIDCol+" FROM "+c.schema.NodesTable+" seed_n WHERE "+strings.Join(prevFilters, " AND ")+")")
@@ -105,14 +139,14 @@ func (c *Compiler) processVarLenStep(
 				seedWhere = append(seedWhere, edgeFilterSQL)
 			}
 			seedSQL = fmt.Sprintf("SELECT e.%s, e.%s, 1, %s FROM %s e WHERE %s",
-				c.schema.EdgeFromCol, c.schema.EdgeToCol, edgeKey, c.schema.EdgesTable, strings.Join(seedWhere, " AND "))
+				c.schema.EdgeFromCol, c.schema.EdgeToCol, edgeKey, edgesSource, strings.Join(seedWhere, " AND "))
 
 			recJoin := "e." + c.schema.EdgeFromCol + " = v.end_id"
 			if edgeFilterSQL != "" {
 				recJoin += " AND " + edgeFilterSQL
 			}
-			recursiveSQL = fmt.Sprintf("SELECT v.start_id, e.%s, v.depth + 1, v.trail || %s FROM %s v JOIN %s e ON %s WHERE v.depth < %d AND instr(v.trail, %s) = 0",
-				c.schema.EdgeToCol, edgeKey, cteName, c.schema.EdgesTable, recJoin, maxHops, edgeKey)
+			recursiveSQL = fmt.Sprintf("SELECT v.start_id, e.%s, v.depth + 1, v.trail || %s FROM %s v JOIN %s e ON %s WHERE v.depth < %d AND %s",
+				c.schema.EdgeToCol, edgeKey, cteName, edgesSource, recJoin, maxHops, noCycleCheck)
 
 		case "target":
 			seedWhere = append(seedWhere, "e."+c.schema.EdgeToCol+" IN (SELECT "+c.schema.NodeIDCol+" FROM "+c.schema.NodesTable+" seed_n WHERE "+strings.Join(targetFilters, " AND ")+")")
@@ -120,32 +154,14 @@ func (c *Compiler) processVarLenStep(
 				seedWhere = append(seedWhere, edgeFilterSQL)
 			}
 			seedSQL = fmt.Sprintf("SELECT e.%s, e.%s, 1, %s FROM %s e WHERE %s",
-				c.schema.EdgeFromCol, c.schema.EdgeToCol, edgeKey, c.schema.EdgesTable, strings.Join(seedWhere, " AND "))
+				c.schema.EdgeFromCol, c.schema.EdgeToCol, edgeKey, edgesSource, strings.Join(seedWhere, " AND "))
 
 			recJoin := "e." + c.schema.EdgeToCol + " = v.start_id"
 			if edgeFilterSQL != "" {
 				recJoin += " AND " + edgeFilterSQL
 			}
-			recursiveSQL = fmt.Sprintf("SELECT e.%s, v.end_id, v.depth + 1, v.trail || %s FROM %s v JOIN %s e ON %s WHERE v.depth < %d AND instr(v.trail, %s) = 0",
-				c.schema.EdgeFromCol, edgeKey, cteName, c.schema.EdgesTable, recJoin, maxHops, edgeKey)
-
-		default: // "none"
-			if edgeFilterSQL != "" {
-				seedWhere = append(seedWhere, edgeFilterSQL)
-			}
-			whereClause := ""
-			if len(seedWhere) > 0 {
-				whereClause = " WHERE " + strings.Join(seedWhere, " AND ")
-			}
-			seedSQL = fmt.Sprintf("SELECT e.%s, e.%s, 1, %s FROM %s e%s",
-				c.schema.EdgeFromCol, c.schema.EdgeToCol, edgeKey, c.schema.EdgesTable, whereClause)
-
-			recJoin := "e." + c.schema.EdgeFromCol + " = v.end_id"
-			if edgeFilterSQL != "" {
-				recJoin += " AND " + edgeFilterSQL
-			}
-			recursiveSQL = fmt.Sprintf("SELECT v.start_id, e.%s, v.depth + 1, v.trail || %s FROM %s v JOIN %s e ON %s WHERE v.depth < %d AND instr(v.trail, %s) = 0",
-				c.schema.EdgeToCol, edgeKey, cteName, c.schema.EdgesTable, recJoin, maxHops, edgeKey)
+			recursiveSQL = fmt.Sprintf("SELECT e.%s, v.end_id, v.depth + 1, v.trail || %s FROM %s v JOIN %s e ON %s WHERE v.depth < %d AND %s",
+				c.schema.EdgeFromCol, edgeKey, cteName, edgesSource, recJoin, maxHops, noCycleCheck)
 		}
 	} else { // ast.DirectionIncoming (<-)
 		switch anchorEnd {
@@ -155,14 +171,14 @@ func (c *Compiler) processVarLenStep(
 				seedWhere = append(seedWhere, edgeFilterSQL)
 			}
 			seedSQL = fmt.Sprintf("SELECT e.%s, e.%s, 1, %s FROM %s e WHERE %s",
-				c.schema.EdgeFromCol, c.schema.EdgeToCol, edgeKey, c.schema.EdgesTable, strings.Join(seedWhere, " AND "))
+				c.schema.EdgeFromCol, c.schema.EdgeToCol, edgeKey, edgesSource, strings.Join(seedWhere, " AND "))
 
 			recJoin := "e." + c.schema.EdgeToCol + " = v.start_id"
 			if edgeFilterSQL != "" {
 				recJoin += " AND " + edgeFilterSQL
 			}
-			recursiveSQL = fmt.Sprintf("SELECT e.%s, v.end_id, v.depth + 1, v.trail || %s FROM %s v JOIN %s e ON %s WHERE v.depth < %d AND instr(v.trail, %s) = 0",
-				c.schema.EdgeFromCol, edgeKey, cteName, c.schema.EdgesTable, recJoin, maxHops, edgeKey)
+			recursiveSQL = fmt.Sprintf("SELECT e.%s, v.end_id, v.depth + 1, v.trail || %s FROM %s v JOIN %s e ON %s WHERE v.depth < %d AND %s",
+				c.schema.EdgeFromCol, edgeKey, cteName, edgesSource, recJoin, maxHops, noCycleCheck)
 
 		case "target":
 			seedWhere = append(seedWhere, "e."+c.schema.EdgeFromCol+" IN (SELECT "+c.schema.NodeIDCol+" FROM "+c.schema.NodesTable+" seed_n WHERE "+strings.Join(targetFilters, " AND ")+")")
@@ -170,32 +186,14 @@ func (c *Compiler) processVarLenStep(
 				seedWhere = append(seedWhere, edgeFilterSQL)
 			}
 			seedSQL = fmt.Sprintf("SELECT e.%s, e.%s, 1, %s FROM %s e WHERE %s",
-				c.schema.EdgeFromCol, c.schema.EdgeToCol, edgeKey, c.schema.EdgesTable, strings.Join(seedWhere, " AND "))
+				c.schema.EdgeFromCol, c.schema.EdgeToCol, edgeKey, edgesSource, strings.Join(seedWhere, " AND "))
 
 			recJoin := "e." + c.schema.EdgeFromCol + " = v.end_id"
 			if edgeFilterSQL != "" {
 				recJoin += " AND " + edgeFilterSQL
 			}
-			recursiveSQL = fmt.Sprintf("SELECT v.start_id, e.%s, v.depth + 1, v.trail || %s FROM %s v JOIN %s e ON %s WHERE v.depth < %d AND instr(v.trail, %s) = 0",
-				c.schema.EdgeToCol, edgeKey, cteName, c.schema.EdgesTable, recJoin, maxHops, edgeKey)
-
-		default: // "none"
-			if edgeFilterSQL != "" {
-				seedWhere = append(seedWhere, edgeFilterSQL)
-			}
-			whereClause := ""
-			if len(seedWhere) > 0 {
-				whereClause = " WHERE " + strings.Join(seedWhere, " AND ")
-			}
-			seedSQL = fmt.Sprintf("SELECT e.%s, e.%s, 1, %s FROM %s e%s",
-				c.schema.EdgeFromCol, c.schema.EdgeToCol, edgeKey, c.schema.EdgesTable, whereClause)
-
-			recJoin := "e." + c.schema.EdgeToCol + " = v.start_id"
-			if edgeFilterSQL != "" {
-				recJoin += " AND " + edgeFilterSQL
-			}
-			recursiveSQL = fmt.Sprintf("SELECT e.%s, v.end_id, v.depth + 1, v.trail || %s FROM %s v JOIN %s e ON %s WHERE v.depth < %d AND instr(v.trail, %s) = 0",
-				c.schema.EdgeFromCol, edgeKey, cteName, c.schema.EdgesTable, recJoin, maxHops, edgeKey)
+			recursiveSQL = fmt.Sprintf("SELECT v.start_id, e.%s, v.depth + 1, v.trail || %s FROM %s v JOIN %s e ON %s WHERE v.depth < %d AND %s",
+				c.schema.EdgeToCol, edgeKey, cteName, edgesSource, recJoin, maxHops, noCycleCheck)
 		}
 	}
 
@@ -203,29 +201,90 @@ func (c *Compiler) processVarLenStep(
 		cteName, seedSQL, recursiveSQL)
 	c.ctes = append(c.ctes, cteDef)
 
+	cteTable := cteName
+	if c.schema.MaxPathTraversals > 0 && c.schema.Dialect.Name() != "clickhouse" {
+		cteTable = fmt.Sprintf("(SELECT * FROM %s LIMIT %d)", cteName, c.schema.MaxPathTraversals)
+	}
+
+	prevIDSrc := c.getNodeIDSQL(prevVar)
+	targetIDSrc := c.getNodeIDSQL(targetVar)
+
 	var cteOnConds []string
-	if rel.Direction == ast.DirectionOutgoing {
+	if !prevDeclared && targetAlreadyDeclared {
+		// Backward join from already-declared targetVar to undeclared prevVar
+		if rel.Direction == ast.DirectionOutgoing || isUndirected {
+			cteOnConds = append(cteOnConds,
+				escRel+".end_id = "+targetIDSrc,
+				escRel+".depth >= "+strconv.Itoa(minHops))
+			c.joins = append(c.joins, JoinModel{
+				Type:  joinKeyword,
+				Table: cteTable,
+				Alias: escRel,
+				On:    strings.Join(cteOnConds, " AND "),
+			})
+			prevOnConds := []string{
+				escPrev + "." + c.schema.NodeIDCol + " = " + escRel + ".start_id",
+			}
+			if isShortestPath {
+				prevOnConds = append(prevOnConds, fmt.Sprintf("%s.depth = (SELECT min(depth) FROM %s WHERE start_id = %s.%s AND end_id = %s)",
+					escRel, cteName, escPrev, c.schema.NodeIDCol, targetIDSrc))
+			}
+			c.addNodeFiltersToConditions(prevNode, prevVar, &prevOnConds)
+			prevOnConds = append(prevOnConds, optionalWhereExtra...)
+			c.joins = append(c.joins, JoinModel{
+				Type:  joinKeyword,
+				Table: c.schema.NodesTable,
+				Alias: escPrev,
+				On:    strings.Join(prevOnConds, " AND "),
+			})
+		} else { // ast.DirectionIncoming (<-)
+			cteOnConds = append(cteOnConds,
+				escRel+".start_id = "+targetIDSrc,
+				escRel+".depth >= "+strconv.Itoa(minHops))
+			c.joins = append(c.joins, JoinModel{
+				Type:  joinKeyword,
+				Table: cteTable,
+				Alias: escRel,
+				On:    strings.Join(cteOnConds, " AND "),
+			})
+			prevOnConds := []string{
+				escPrev + "." + c.schema.NodeIDCol + " = " + escRel + ".end_id",
+			}
+			if isShortestPath {
+				prevOnConds = append(prevOnConds, fmt.Sprintf("%s.depth = (SELECT min(depth) FROM %s WHERE start_id = %s AND end_id = %s.%s)",
+					escRel, cteName, targetIDSrc, escPrev, c.schema.NodeIDCol))
+			}
+			c.addNodeFiltersToConditions(prevNode, prevVar, &prevOnConds)
+			prevOnConds = append(prevOnConds, optionalWhereExtra...)
+			c.joins = append(c.joins, JoinModel{
+				Type:  joinKeyword,
+				Table: c.schema.NodesTable,
+				Alias: escPrev,
+				On:    strings.Join(prevOnConds, " AND "),
+			})
+		}
+	} else if rel.Direction == ast.DirectionOutgoing || isUndirected {
 		cteOnConds = append(cteOnConds,
-			escRel+".start_id = "+escPrev+"."+c.schema.NodeIDCol,
+			escRel+".start_id = "+prevIDSrc,
 			escRel+".depth >= "+strconv.Itoa(minHops))
 		if isShortestPath {
-			cteOnConds = append(cteOnConds, fmt.Sprintf("%s.depth = (SELECT min(depth) FROM %s WHERE start_id = %s.%s AND end_id = %s.%s)",
-				escRel, cteName, escPrev, c.schema.NodeIDCol, escTarget, c.schema.NodeIDCol))
+			cteOnConds = append(cteOnConds, fmt.Sprintf("%s.depth = (SELECT min(depth) FROM %s WHERE start_id = %s AND end_id = %s)",
+				escRel, cteName, prevIDSrc, targetIDSrc))
 		}
 		if targetAlreadyDeclared {
-			cteOnConds = append(cteOnConds, escTarget+"."+c.schema.NodeIDCol+" = "+escRel+".end_id")
+			cteOnConds = append(cteOnConds, targetIDSrc+" = "+escRel+".end_id")
 			c.addNodeFiltersToConditions(targetNode, targetVar, &cteOnConds)
 			cteOnConds = append(cteOnConds, optionalWhereExtra...)
 			c.joins = append(c.joins, JoinModel{
 				Type:  joinKeyword,
-				Table: cteName,
+				Table: cteTable,
 				Alias: escRel,
 				On:    strings.Join(cteOnConds, " AND "),
 			})
 		} else {
 			c.joins = append(c.joins, JoinModel{
 				Type:  joinKeyword,
-				Table: cteName,
+				Table: cteTable,
 				Alias: escRel,
 				On:    strings.Join(cteOnConds, " AND "),
 			})
@@ -243,26 +302,26 @@ func (c *Compiler) processVarLenStep(
 		}
 	} else { // ast.DirectionIncoming (<-)
 		cteOnConds = append(cteOnConds,
-			escRel+".end_id = "+escPrev+"."+c.schema.NodeIDCol,
+			escRel+".end_id = "+prevIDSrc,
 			escRel+".depth >= "+strconv.Itoa(minHops))
 		if isShortestPath {
-			cteOnConds = append(cteOnConds, fmt.Sprintf("%s.depth = (SELECT min(depth) FROM %s WHERE start_id = %s.%s AND end_id = %s.%s)",
-				escRel, cteName, escTarget, c.schema.NodeIDCol, escPrev, c.schema.NodeIDCol))
+			cteOnConds = append(cteOnConds, fmt.Sprintf("%s.depth = (SELECT min(depth) FROM %s WHERE start_id = %s AND end_id = %s)",
+				escRel, cteName, targetIDSrc, prevIDSrc))
 		}
 		if targetAlreadyDeclared {
-			cteOnConds = append(cteOnConds, escTarget+"."+c.schema.NodeIDCol+" = "+escRel+".start_id")
+			cteOnConds = append(cteOnConds, targetIDSrc+" = "+escRel+".start_id")
 			c.addNodeFiltersToConditions(targetNode, targetVar, &cteOnConds)
 			cteOnConds = append(cteOnConds, optionalWhereExtra...)
 			c.joins = append(c.joins, JoinModel{
 				Type:  joinKeyword,
-				Table: cteName,
+				Table: cteTable,
 				Alias: escRel,
 				On:    strings.Join(cteOnConds, " AND "),
 			})
 		} else {
 			c.joins = append(c.joins, JoinModel{
 				Type:  joinKeyword,
-				Table: cteName,
+				Table: cteTable,
 				Alias: escRel,
 				On:    strings.Join(cteOnConds, " AND "),
 			})
@@ -280,6 +339,9 @@ func (c *Compiler) processVarLenStep(
 		}
 	}
 
+	c.declaredNodes[prevVar] = true
+	c.declaredNodes[targetVar] = true
+
 	if pathVar != "" {
 		if c.varAliases == nil {
 			c.varAliases = make(map[string]string)
@@ -293,6 +355,168 @@ func (c *Compiler) processVarLenStep(
 func (c *Compiler) collectNodePatternFilters(node ast.NodePattern, seedAlias string) []string {
 	var conds []string
 	c.addNodeFiltersToConditions(node, seedAlias, &conds)
+	return conds
+}
+
+func (c *Compiler) scoreAnchorSelectivity(node ast.NodePattern, varName string, hasAnchoredNeighbor bool) int {
+	score := 0
+	if node.Properties != nil {
+		for k := range node.Properties {
+			lowerK := strings.ToLower(k)
+			if lowerK == strings.ToLower(c.schema.NodeIDCol) || lowerK == "id" {
+				score += 100
+			} else if lowerK != strings.ToLower(c.schema.NodeKindCol) && lowerK != "kind" && lowerK != "label" {
+				score += 50
+			}
+		}
+	}
+	if c.query.Where != nil {
+		for _, conj := range flattenAnd(c.query.Where) {
+			if referencesOnlyVar(conj, varName) {
+				score += c.scoreWhereExprSelectivity(conj)
+			}
+		}
+	}
+	if hasAnchoredNeighbor {
+		score += 40
+	}
+	if score > 0 && len(node.Labels) > 0 {
+		score += 10
+	}
+	return score
+}
+
+func (c *Compiler) scoreWhereExprSelectivity(expr ast.Expression) int {
+	if b, ok := expr.(ast.BinaryExpr); ok {
+		prop := extractPropertyName(b.Left)
+		if prop == "" {
+			prop = extractPropertyName(b.Right)
+		}
+		lowerProp := strings.ToLower(prop)
+		if lowerProp == "kind" || lowerProp == "label" || lowerProp == strings.ToLower(c.schema.NodeKindCol) {
+			return 0
+		}
+		isID := lowerProp == "id" || lowerProp == strings.ToLower(c.schema.NodeIDCol)
+		switch b.Op {
+		case ast.OpEq:
+			if isID {
+				return 100
+			}
+			return 50
+		case ast.OpIn:
+			if isID {
+				return 80
+			}
+			return 40
+		case ast.OpStarts:
+			return 30
+		case ast.OpContains, ast.OpEnds, ast.OpLt, ast.OpLte, ast.OpGt, ast.OpGte:
+			return 20
+		default:
+			return 10
+		}
+	}
+	if _, ok := expr.(ast.HasLabelExpr); ok {
+		return 0
+	}
+	return 10
+}
+
+func extractPropertyName(expr ast.Expression) string {
+	if p, ok := expr.(ast.PropertyAccessExpr); ok {
+		return p.Property
+	}
+	if fn, ok := expr.(ast.FunctionCallExpr); ok && len(fn.Args) == 1 {
+		lower := strings.ToLower(fn.Name)
+		if lower == "id" || lower == "elementid" {
+			return "id"
+		}
+		return extractPropertyName(fn.Args[0])
+	}
+	return ""
+}
+
+func (c *Compiler) collectNeighborAnchorFilters(endpointVar string, seedAlias string) []string {
+	if endpointVar == "" || c.query == nil {
+		return nil
+	}
+	var conds []string
+	for _, m := range c.query.Matches {
+		if m.IsOptional {
+			continue
+		}
+		for _, p := range m.Paths {
+			nodes := []ast.NodePattern{p.Head}
+			for _, el := range p.Chain {
+				nodes = append(nodes, el.Target)
+			}
+			for i, el := range p.Chain {
+				if el.Relationship.MinHops != nil || el.Relationship.MaxHops != nil {
+					continue
+				}
+				leftNode := nodes[i]
+				rightNode := nodes[i+1]
+				var neighborNode ast.NodePattern
+				var neighborIsLeft bool
+				if leftNode.Variable == endpointVar && rightNode.Variable != "" && rightNode.Variable != endpointVar {
+					neighborNode = rightNode
+					neighborIsLeft = false
+				} else if rightNode.Variable == endpointVar && leftNode.Variable != "" && leftNode.Variable != endpointVar {
+					neighborNode = leftNode
+					neighborIsLeft = true
+				} else {
+					continue
+				}
+				if !c.nodeHasPropertyAnchor(neighborNode, neighborNode.Variable) {
+					continue
+				}
+				nbFilters := append(c.collectNodePatternFilters(neighborNode, "nb_n"), c.collectWhereConjunctsForVar(neighborNode.Variable, "nb_n")...)
+				if len(nbFilters) == 0 {
+					continue
+				}
+				var edgeConds []string
+				if len(el.Relationship.Types) == 1 {
+					edgeConds = append(edgeConds, "nb_e."+c.schema.EdgeKindCol+" = '"+SanitizeSQLLiteral(el.Relationship.Types[0])+"'")
+				} else if len(el.Relationship.Types) > 1 {
+					var escapedTypes []string
+					for _, t := range el.Relationship.Types {
+						escapedTypes = append(escapedTypes, SanitizeSQLLiteral(t))
+					}
+					edgeConds = append(edgeConds, "nb_e."+c.schema.EdgeKindCol+" IN ('"+strings.Join(escapedTypes, "', '")+"')")
+				}
+				var seedCol, nbCol string
+				if (!neighborIsLeft && el.Relationship.Direction == ast.DirectionOutgoing) ||
+					(neighborIsLeft && el.Relationship.Direction == ast.DirectionIncoming) {
+					seedCol = "nb_e." + c.schema.EdgeFromCol
+					nbCol = "nb_e." + c.schema.EdgeToCol
+				} else if (!neighborIsLeft && el.Relationship.Direction == ast.DirectionIncoming) ||
+					(neighborIsLeft && el.Relationship.Direction == ast.DirectionOutgoing) {
+					seedCol = "nb_e." + c.schema.EdgeToCol
+					nbCol = "nb_e." + c.schema.EdgeFromCol
+				} else {
+					// Undirected 1-hop neighbor
+					edgeWhere := ""
+					if len(edgeConds) > 0 {
+						edgeWhere = " AND " + strings.Join(edgeConds, " AND ")
+					}
+					subq := fmt.Sprintf(
+						"%s.%s IN (SELECT CASE WHEN nb_e.%s = nb_n.%s THEN nb_e.%s ELSE nb_e.%s END FROM %s nb_e JOIN %s nb_n ON (nb_e.%s = nb_n.%s OR nb_e.%s = nb_n.%s)%s WHERE %s)",
+						seedAlias, c.schema.NodeIDCol,
+						c.schema.EdgeFromCol, c.schema.NodeIDCol, c.schema.EdgeToCol, c.schema.EdgeFromCol,
+						c.schema.EdgesTable, c.schema.NodesTable,
+						c.schema.EdgeFromCol, c.schema.NodeIDCol, c.schema.EdgeToCol, c.schema.NodeIDCol,
+						edgeWhere, strings.Join(nbFilters, " AND "))
+					conds = append(conds, subq)
+					continue
+				}
+				edgeConds = append([]string{nbCol + " = nb_n." + c.schema.NodeIDCol}, edgeConds...)
+				subq := fmt.Sprintf("%s.%s IN (SELECT %s FROM %s nb_e JOIN %s nb_n ON %s WHERE %s)",
+					seedAlias, c.schema.NodeIDCol, seedCol, c.schema.EdgesTable, c.schema.NodesTable,
+					strings.Join(edgeConds, " AND "), strings.Join(nbFilters, " AND "))
+				conds = append(conds, subq)
+			}
+		}
+	}
 	return conds
 }
 

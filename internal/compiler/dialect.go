@@ -12,6 +12,9 @@ type Dialect interface {
 	// JSONExtract returns an expression extracting a property from a JSON column.
 	JSONExtract(column, property string) string
 
+	// JSONExtractNumber returns a numeric expression extracting a number property from a JSON column.
+	JSONExtractNumber(column, property string) string
+
 	// ArrayAgg returns an aggregation expression collecting elements into an array.
 	ArrayAgg(expr string, filter string, distinct bool) string
 
@@ -66,6 +69,10 @@ func (d *sqliteDialect) Name() string {
 }
 
 func (d *sqliteDialect) JSONExtract(column, property string) string {
+	return "json_extract(" + column + ", '$." + property + "')"
+}
+
+func (d *sqliteDialect) JSONExtractNumber(column, property string) string {
 	return "json_extract(" + column + ", '$." + property + "')"
 }
 
@@ -142,6 +149,10 @@ func (d *clickhouseDialect) Name() string {
 
 func (d *clickhouseDialect) JSONExtract(column, property string) string {
 	return "JSONExtractString(" + column + ", '" + property + "')"
+}
+
+func (d *clickhouseDialect) JSONExtractNumber(column, property string) string {
+	return "JSONExtractFloat(" + column + ", '" + property + "')"
 }
 
 func (d *clickhouseDialect) ArrayAgg(expr string, filter string, distinct bool) string {
@@ -227,7 +238,7 @@ func (d *clickhouseDialect) RenderListComprehension(m *ListCompModel) string {
 func (d *clickhouseDialect) JSONObject(pairs []KeyValuePair) string {
 	var parts []string
 	for _, p := range pairs {
-		parts = append(parts, "'"+p.Key+"'", p.Value)
+		parts = append(parts, "'"+p.Key+"'", "toString("+p.Value+")")
 	}
 	return "map(" + strings.Join(parts, ", ") + ")"
 }
