@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"strconv"
 	"strings"
 )
 
@@ -249,4 +250,109 @@ func (d *clickhouseDialect) RenderUnwind(expr, alias string, isFirst bool) (tabl
 		return subq, ""
 	}
 	return subq, "CROSS JOIN"
+}
+
+// --- PostgreSQL Dialect ---
+
+type postgresDialect struct{}
+
+// PostgresDialect returns the PostgreSQL (JSONB) dialect implementation.
+func PostgresDialect() Dialect {
+	return &postgresDialect{}
+}
+
+func (d *postgresDialect) Name() string {
+	return "postgres"
+}
+
+func (d *postgresDialect) JSONExtract(column, property string) string {
+	return "((" + column + ")::jsonb->>'" + property + "')"
+}
+
+func (d *postgresDialect) JSONExtractNumber(column, property string) string {
+	return "CAST(((" + column + ")::jsonb->>'" + property + "') AS DOUBLE PRECISION)"
+}
+
+func (d *postgresDialect) ArrayAgg(expr string, filter string, distinct bool) string {
+	distinctStr := ""
+	if distinct {
+		distinctStr = "DISTINCT "
+	}
+	if filter != "" {
+		return "COALESCE(jsonb_agg(" + distinctStr + expr + ") FILTER (WHERE " + filter + "), '[]'::jsonb)"
+	}
+	return "COALESCE(jsonb_agg(" + distinctStr + expr + "), '[]'::jsonb)"
+}
+
+func (d *postgresDialect) ArrayLiteral(items ...string) string {
+	return "jsonb_build_array(" + strings.Join(items, ", ") + ")"
+}
+
+func (d *postgresDialect) JSONValid(expr string) string {
+	return "(pg_typeof(" + expr + ")::text IN ('json', 'jsonb'))"
+}
+
+func (d *postgresDialect) ArrayLength(expr string) string {
+	return "CASE WHEN jsonb_typeof(to_jsonb(" + expr + ")) = 'array' THEN jsonb_array_length(to_jsonb(" + expr + ")) ELSE length((" + expr + ")::text) END"
+}
+
+func (d *postgresDialect) ParamPlaceholder(name string, index int) string {
+	return "$" + strconv.Itoa(index)
+}
+
+func (d *postgresDialect) InArray(val, list string) string {
+	return "CAST(" + val + " AS TEXT) IN (SELECT jsonb_array_elements_text((" + list + ")::jsonb))"
+}
+
+func (d *postgresDialect) RenderCollectSubquery(m *SubqueryModel) string {
+	distinctStr := ""
+	if m.Distinct {
+		distinctStr = "DISTINCT "
+	}
+	whereClause := ""
+	if m.Where != "" {
+		whereClause = " WHERE " + m.Where
+	}
+	return "(SELECT COALESCE(jsonb_agg(" + distinctStr + m.Projection + ") FILTER (WHERE " + m.Projection + " IS NOT NULL), '[]'::jsonb) FROM " + m.FromJoins + whereClause + ")"
+}
+
+func (d *postgresDialect) RenderQuantifier(m *QuantifierModel) string {
+	from := "jsonb_array_elements_text(CASE WHEN jsonb_typeof((" + m.List + ")::jsonb) = 'array' THEN (" + m.List + ")::jsonb ELSE '[]'::jsonb END) AS " + m.Var + "(value)"
+	switch m.Quantifier {
+	case "any":
+		return "(EXISTS (SELECT 1 FROM " + from + " WHERE " + m.Predicate + "))"
+	case "none":
+		return "(NOT EXISTS (SELECT 1 FROM " + from + " WHERE " + m.Predicate + "))"
+	case "all":
+		return "(NOT EXISTS (SELECT 1 FROM " + from + " WHERE NOT (" + m.Predicate + ")))"
+	case "single":
+		return "((SELECT COUNT(1) FROM " + from + " WHERE " + m.Predicate + ") = 1)"
+	default:
+		return "(EXISTS (SELECT 1 FROM " + from + " WHERE " + m.Predicate + "))"
+	}
+}
+
+func (d *postgresDialect) RenderListComprehension(m *ListCompModel) string {
+	from := "jsonb_array_elements_text(CASE WHEN jsonb_typeof((" + m.List + ")::jsonb) = 'array' THEN (" + m.List + ")::jsonb ELSE '[]'::jsonb END) AS " + m.Var + "(value)"
+	filterClause := ""
+	if m.Filter != "" {
+		filterClause = " WHERE " + m.Filter
+	}
+	return "(SELECT COALESCE(jsonb_agg(" + m.Projection + "), '[]'::jsonb) FROM " + from + filterClause + ")"
+}
+
+func (d *postgresDialect) JSONObject(pairs []KeyValuePair) string {
+	var parts []string
+	for _, p := range pairs {
+		parts = append(parts, "'"+p.Key+"'", p.Value)
+	}
+	return "jsonb_build_object(" + strings.Join(parts, ", ") + ")"
+}
+
+func (d *postgresDialect) RenderUnwind(expr, alias string, isFirst bool) (table, joinType string) {
+	tbl := "(SELECT jsonb_array_elements_text((" + expr + ")::jsonb) AS value)"
+	if isFirst {
+		return tbl, ""
+	}
+	return tbl, "CROSS JOIN LATERAL"
 }

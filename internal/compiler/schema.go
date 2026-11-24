@@ -64,3 +64,20 @@ func ClickHouseSchemaConfig() SchemaConfig {
 		MaxPathTraversals: DefaultMaxPathTraversals,
 	}
 }
+
+// PostgresSchemaConfig returns a standard SchemaConfig tuned for PostgreSQL (JSONB).
+func PostgresSchemaConfig() SchemaConfig {
+	return SchemaConfig{
+		Dialect:           PostgresDialect(),
+		NodesTable:        "nodes",
+		EdgesTable:        "edges",
+		NodeIDCol:         "id",
+		NodeKindCol:       "kind",
+		NodePropsCol:      "properties",
+		EdgeFromCol:       "from_id",
+		EdgeToCol:         "to_id",
+		EdgeKindCol:       "kind",
+		EdgePropsCol:      "properties",
+		MaxPathTraversals: DefaultMaxPathTraversals,
+	}
+}

@@ -42,6 +42,11 @@ func ClickHouseDialect() Dialect {
 	return compiler.ClickHouseDialect()
 }
 
+// PostgresDialect returns the PostgreSQL (JSONB) dialect implementation.
+func PostgresDialect() Dialect {
+	return compiler.PostgresDialect()
+}
+
 // DefaultSchemaConfig returns the standard Universal Property Graph schema configuration for SQLite.
 func DefaultSchemaConfig() SchemaConfig {
 	return compiler.DefaultSchemaConfig()
@@ -50,6 +55,11 @@ func DefaultSchemaConfig() SchemaConfig {
 // ClickHouseSchemaConfig returns a standard SchemaConfig tuned for ClickHouse.
 func ClickHouseSchemaConfig() SchemaConfig {
 	return compiler.ClickHouseSchemaConfig()
+}
+
+// PostgresSchemaConfig returns a standard SchemaConfig tuned for PostgreSQL (JSONB).
+func PostgresSchemaConfig() SchemaConfig {
+	return compiler.PostgresSchemaConfig()
 }
 
 // Compile compiles a Cypher query string into SQLite SQL using the default schema.

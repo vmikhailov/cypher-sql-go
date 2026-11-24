@@ -41,6 +41,8 @@ type Compiler struct {
 	joins              []JoinModel
 	varIndex           int
 	paramIndex         int
+	paramSlots         map[string]int
+	paramOrder         []string
 }
 
 // NewCompiler creates a new Compiler with default schema.
@@ -89,6 +91,7 @@ func NewCompilerWithOptions(query *ast.Query, params map[string]any, cfg SchemaC
 		schema:             cfg,
 		initialParams:      params,
 		params:             make(map[string]any),
+		paramSlots:         make(map[string]int),
 		declaredNodes:      make(map[string]bool),
 		declaredRels:       make(map[string]bool),
 		varLenRels:         make(map[string]bool),
@@ -175,8 +178,9 @@ func (c *Compiler) Compile() (*CompiledQuery, error) {
 	sql := c.assembleQuerySQL(selectColumns, whereConditions, groupByColumns, havingConditions)
 
 	return &CompiledQuery{
-		SQL:    sql,
-		Params: c.params,
+		SQL:        sql,
+		Params:     c.params,
+		ParamOrder: c.paramOrder,
 	}, nil
 }
 
@@ -721,7 +725,7 @@ func (c *Compiler) processWithClauses(
 					if c.declaredNodes[id.Name] {
 						*groupByColumns = append(*groupByColumns, c.getNodeIDSQL(id.Name))
 					} else if c.declaredRels[id.Name] {
-						if c.schema.Dialect.Name() == "clickhouse" {
+						if c.schema.Dialect.Name() == "clickhouse" || c.schema.Dialect.Name() == "postgres" {
 							*groupByColumns = append(*groupByColumns, c.escapeVar(id.Name)+"."+c.schema.EdgeFromCol)
 						} else {
 							*groupByColumns = append(*groupByColumns, c.escapeVar(id.Name)+".rowid")
@@ -970,7 +974,7 @@ func (c *Compiler) populateReturnGroupBy(ret ast.ReturnClause, groupByColumns *[
 			if c.declaredNodes[id.Name] {
 				*groupByColumns = append(*groupByColumns, c.getNodeIDSQL(id.Name))
 			} else if c.declaredRels[id.Name] {
-				if c.schema.Dialect.Name() == "clickhouse" {
+				if c.schema.Dialect.Name() == "clickhouse" || c.schema.Dialect.Name() == "postgres" {
 					*groupByColumns = append(*groupByColumns, c.escapeVar(id.Name)+"."+c.schema.EdgeFromCol)
 				} else {
 					*groupByColumns = append(*groupByColumns, c.escapeVar(id.Name)+".rowid")
@@ -986,6 +990,24 @@ func (c *Compiler) populateReturnGroupBy(ret ast.ReturnClause, groupByColumns *[
 		} else {
 			exprSQL, _ := c.visitExpression(item.Expression)
 			*groupByColumns = append(*groupByColumns, exprSQL)
+		}
+	}
+
+	// PostgreSQL strictly requires anchor node IDs referenced by decomposed correlated subqueries
+	// to appear in GROUP BY (SQLSTATE 42803).
+	if c.schema.Dialect.Name() == "postgres" && len(c.decomposedBranches) > 0 {
+		seenRoots := make(map[string]bool)
+		for _, col := range *groupByColumns {
+			seenRoots[col] = true
+		}
+		for _, branch := range c.decomposedBranches {
+			if branch.RootVar != "" && c.declaredNodes[branch.RootVar] {
+				idCol := c.getNodeIDSQL(branch.RootVar)
+				if !seenRoots[idCol] {
+					seenRoots[idCol] = true
+					*groupByColumns = append(*groupByColumns, idCol)
+				}
+			}
 		}
 	}
 }

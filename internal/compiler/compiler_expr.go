@@ -20,8 +20,14 @@ func (c *Compiler) visitExpression(expr ast.Expression) (string, error) {
 	case ast.LiteralExpr:
 		return c.visitLiteral(e), nil
 	case ast.ParameterExpr:
-		c.paramIndex++
-		return c.schema.Dialect.ParamPlaceholder(e.Name, c.paramIndex), nil
+		idx, exists := c.paramSlots[e.Name]
+		if !exists {
+			c.paramIndex++
+			idx = c.paramIndex
+			c.paramSlots[e.Name] = idx
+			c.paramOrder = append(c.paramOrder, e.Name)
+		}
+		return c.schema.Dialect.ParamPlaceholder(e.Name, idx), nil
 	case ast.BinaryExpr:
 		return c.visitBinary(e)
 	case ast.UnaryExpr:
@@ -145,6 +151,9 @@ func (c *Compiler) visitPropertyAccessTyped(prop ast.PropertyAccessExpr, numeric
 	if c.declaredRels[prop.Variable] {
 		switch strings.ToLower(propName) {
 		case "id":
+			if c.schema.Dialect.Name() == "postgres" || c.schema.Dialect.Name() == "clickhouse" {
+				return v + "." + c.schema.EdgeFromCol + " || ':' || " + v + "." + c.schema.EdgeKindCol + " || ':' || " + v + "." + c.schema.EdgeToCol
+			}
 			return v + ".rowid"
 		case "kind", "type":
 			return v + "." + c.schema.EdgeKindCol
@@ -603,6 +612,45 @@ func (c *Compiler) visitListSlice(slice ast.ListSliceExpr) (string, error) {
 		return "", err
 	}
 
+	if c.schema.Dialect.Name() == "postgres" {
+		var conds []string
+		if slice.From != nil {
+			fromSQL, err := c.visitExpression(slice.From)
+			if err != nil {
+				return "", err
+			}
+			if fromInt, ok := tryGetIntLiteral(slice.From); ok {
+				if fromInt < 0 {
+					conds = append(conds, fmt.Sprintf("(_ord - 1) >= (jsonb_array_length((%s)::jsonb) + (%d))", listSQL, fromInt))
+				} else {
+					conds = append(conds, fmt.Sprintf("(_ord - 1) >= %d", fromInt))
+				}
+			} else {
+				conds = append(conds, fmt.Sprintf("(_ord - 1) >= (CASE WHEN (%s) < 0 THEN jsonb_array_length((%s)::jsonb) + (%s) ELSE (%s) END)", fromSQL, listSQL, fromSQL, fromSQL))
+			}
+		}
+		if slice.To != nil {
+			toSQL, err := c.visitExpression(slice.To)
+			if err != nil {
+				return "", err
+			}
+			if toInt, ok := tryGetIntLiteral(slice.To); ok {
+				if toInt < 0 {
+					conds = append(conds, fmt.Sprintf("(_ord - 1) < (jsonb_array_length((%s)::jsonb) + (%d))", listSQL, toInt))
+				} else {
+					conds = append(conds, fmt.Sprintf("(_ord - 1) < %d", toInt))
+				}
+			} else {
+				conds = append(conds, fmt.Sprintf("(_ord - 1) < (CASE WHEN (%s) < 0 THEN jsonb_array_length((%s)::jsonb) + (%s) ELSE (%s) END)", toSQL, listSQL, toSQL, toSQL))
+			}
+		}
+		whereClause := ""
+		if len(conds) > 0 {
+			whereClause = " WHERE " + strings.Join(conds, " AND ")
+		}
+		return fmt.Sprintf("COALESCE((SELECT jsonb_agg(_val ORDER BY _ord) FROM jsonb_array_elements((%s)::jsonb) WITH ORDINALITY AS _s(_val, _ord)%s), '[]'::jsonb)", listSQL, whereClause), nil
+	}
+
 	var conds []string
 	if slice.From != nil {
 		fromSQL, err := c.visitExpression(slice.From)
@@ -752,6 +800,8 @@ func (c *Compiler) compileCorrelatedSubquery(subQuery *ast.Query, matches []ast.
 	subCompiler := NewCompilerWithOptions(&qCopy, c.initialParams, c.schema)
 	subCompiler.varIndex = c.varIndex + 100
 	subCompiler.paramIndex = c.paramIndex
+	subCompiler.paramSlots = c.paramSlots
+	subCompiler.paramOrder = c.paramOrder
 	for k, v := range c.declaredNodes {
 		subCompiler.declaredNodes[k] = v
 	}
@@ -786,6 +836,7 @@ func (c *Compiler) compileCorrelatedSubquery(subQuery *ast.Query, matches []ast.
 	}
 	c.varIndex = subCompiler.varIndex
 	c.paramIndex = subCompiler.paramIndex
+	c.paramOrder = subCompiler.paramOrder
 
 	if isExists {
 		return "EXISTS (" + compiledSub.SQL + ")", nil

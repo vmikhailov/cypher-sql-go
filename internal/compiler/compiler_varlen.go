@@ -112,17 +112,24 @@ func (c *Compiler) processVarLenStep(
 			c.schema.EdgeToCol, c.schema.EdgeFromCol, c.schema.EdgeFromCol, c.schema.EdgeToCol, c.schema.EdgeKindCol, c.schema.EdgePropsCol, c.schema.EdgesTable)
 	}
 
-	edgeKey := "char(31) || e." + c.schema.EdgeFromCol + " || char(30) || e." + c.schema.EdgeToCol + " || char(30) || e." + c.schema.EdgeKindCol + " || char(31)"
+	charFn := "char"
+	if c.schema.Dialect.Name() == "postgres" {
+		charFn = "chr"
+	}
+	edgeKey := charFn + "(31) || e." + c.schema.EdgeFromCol + " || " + charFn + "(30) || e." + c.schema.EdgeToCol + " || " + charFn + "(30) || e." + c.schema.EdgeKindCol + " || " + charFn + "(31)"
 	if isUndirected {
-		edgeKey = fmt.Sprintf("char(31) || (CASE WHEN e.%s < e.%s THEN e.%s || char(30) || e.%s ELSE e.%s || char(30) || e.%s END) || char(30) || e.%s || char(31)",
+		edgeKey = fmt.Sprintf("%s(31) || (CASE WHEN e.%s < e.%s THEN e.%s || %s(30) || e.%s ELSE e.%s || %s(30) || e.%s END) || %s(30) || e.%s || %s(31)",
+			charFn,
 			c.schema.EdgeFromCol, c.schema.EdgeToCol,
-			c.schema.EdgeFromCol, c.schema.EdgeToCol,
-			c.schema.EdgeToCol, c.schema.EdgeFromCol,
-			c.schema.EdgeKindCol)
+			c.schema.EdgeFromCol, charFn, c.schema.EdgeToCol,
+			c.schema.EdgeToCol, charFn, c.schema.EdgeFromCol,
+			charFn, c.schema.EdgeKindCol, charFn)
 	}
 	noCycleCheck := "instr(v.trail, " + edgeKey + ") = 0"
 	if c.schema.Dialect.Name() == "clickhouse" {
 		noCycleCheck = "position(v.trail, " + edgeKey + ") = 0"
+	} else if c.schema.Dialect.Name() == "postgres" {
+		noCycleCheck = "strpos(v.trail, " + edgeKey + ") = 0"
 	}
 
 	cteName := fmt.Sprintf("_vl%d", len(c.ctes)+1)

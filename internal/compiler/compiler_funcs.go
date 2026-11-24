@@ -182,11 +182,17 @@ func (c *Compiler) compileGraphFunction(lower string, fn ast.FunctionCallExpr) (
 				if c.schema.Dialect.Name() == "clickhouse" {
 					return "JSONExtractKeys(" + propsSQL + ")", true, nil
 				}
+				if c.schema.Dialect.Name() == "postgres" {
+					return "(SELECT COALESCE(jsonb_agg(_k), '[]'::jsonb) FROM jsonb_object_keys((" + propsSQL + ")::jsonb) AS _k)", true, nil
+				}
 				return "(SELECT json_group_array(key) FROM json_each(" + propsSQL + "))", true, nil
 			}
 			if c.declaredRels[id.Name] {
 				if c.schema.Dialect.Name() == "clickhouse" {
 					return "JSONExtractKeys(" + v + "." + c.schema.EdgePropsCol + ")", true, nil
+				}
+				if c.schema.Dialect.Name() == "postgres" {
+					return "(SELECT COALESCE(jsonb_agg(_k), '[]'::jsonb) FROM jsonb_object_keys((" + v + "." + c.schema.EdgePropsCol + ")::jsonb) AS _k)", true, nil
 				}
 				return "(SELECT json_group_array(key) FROM json_each(" + v + "." + c.schema.EdgePropsCol + "))", true, nil
 			}
@@ -197,6 +203,9 @@ func (c *Compiler) compileGraphFunction(lower string, fn ast.FunctionCallExpr) (
 		}
 		if c.schema.Dialect.Name() == "clickhouse" {
 			return "JSONExtractKeys(" + argSQL + ")", true, nil
+		}
+		if c.schema.Dialect.Name() == "postgres" {
+			return "(SELECT COALESCE(jsonb_agg(_k), '[]'::jsonb) FROM jsonb_object_keys((" + argSQL + ")::jsonb) AS _k)", true, nil
 		}
 		return "(SELECT json_group_array(key) FROM json_each(" + argSQL + "))", true, nil
 
@@ -237,7 +246,7 @@ func (c *Compiler) compileAggregateFunction(lower string, fn ast.FunctionCallExp
 				if c.varLenRels[id.Name] {
 					return "COUNT(" + distinctStr + c.escapeVar(id.Name) + ".depth)", true, nil
 				}
-				if c.schema.Dialect.Name() == "clickhouse" {
+				if c.schema.Dialect.Name() == "clickhouse" || c.schema.Dialect.Name() == "postgres" {
 					return "COUNT(" + distinctStr + c.escapeVar(id.Name) + "." + c.schema.EdgeFromCol + ")", true, nil
 				}
 				return "COUNT(" + distinctStr + c.escapeVar(id.Name) + ".rowid)", true, nil
@@ -436,6 +445,13 @@ func (c *Compiler) compileScalarFunction(lower string, fn ast.FunctionCallExpr) 
 			}
 			return fmt.Sprintf("arrayElement(%s, (%s) + 1)", containerSQL, idxSQL), true, nil
 		}
+		if c.schema.Dialect.Name() == "postgres" {
+			idxSQL, err := c.visitExpression(fn.Args[1])
+			if err != nil {
+				return "", true, err
+			}
+			return fmt.Sprintf("((%s)::jsonb->>CAST(%s AS INTEGER))", containerSQL, idxSQL), true, nil
+		}
 		if idxInt, ok := tryGetIntLiteral(fn.Args[1]); ok {
 			if idxInt < 0 {
 				return fmt.Sprintf("json_extract(%s, '$[#%d]')", containerSQL, idxInt), true, nil
@@ -459,6 +475,9 @@ func (c *Compiler) compileScalarFunction(lower string, fn ast.FunctionCallExpr) 
 		if c.schema.Dialect.Name() == "clickhouse" {
 			return "arrayElement(" + listSQL + ", 1)", true, nil
 		}
+		if c.schema.Dialect.Name() == "postgres" {
+			return "((" + listSQL + ")::jsonb->>0)", true, nil
+		}
 		return "json_extract(" + listSQL + ", '$[0]')", true, nil
 
 	case "last":
@@ -471,6 +490,9 @@ func (c *Compiler) compileScalarFunction(lower string, fn ast.FunctionCallExpr) 
 		}
 		if c.schema.Dialect.Name() == "clickhouse" {
 			return "arrayElement(" + listSQL + ", -1)", true, nil
+		}
+		if c.schema.Dialect.Name() == "postgres" {
+			return "((" + listSQL + ")::jsonb->>-1)", true, nil
 		}
 		return "json_extract(" + listSQL + ", '$[#-1]')", true, nil
 
